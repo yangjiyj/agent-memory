@@ -8,7 +8,7 @@ You use Claude Code on the desktop, Codex on the laptop, Hermes / OpenClaw on a 
 
 - **Shared memory** — each agent's native memory files (Claude Code memory, Hermes `USER.md`, WorkBuddy `MEMORY.md`, …) sync to a hub; every agent can query and write through MCP tools; a digest (preferences, project status, what you've been doing lately) is injected into each tool's instruction file.
 - **Conversation archive + work journal** — every agent's conversations (user and assistant text only, secrets redacted) are uploaded incrementally and kept long-term; a cheap model writes one line per session per day ("what got done"). Ask any agent on any machine "what did I do last Thursday?" or "when did we ship that deploy?".
-- **Visualization** — open the hub in a browser and you get a sidebar console (`/console`): a rotating "work galaxy" and live war room, a knowledge graph, a timeline (work calendar, per-day swimlanes for every machine and agent, punch card, milestones), project streams, todos, agent status and audit. There is also an auto-cruising wall display (`/wall`) and a year-in-review (`/w`).
+- **Console** — open the hub in a browser and you get one sidebar console (`/console`): an overview (a rotating "work galaxy", a live war room, things that need attention); a memory library (search, filter, edit, retire), a triage queue (candidates, likely duplicates, stale status) and a knowledge graph; a timeline (work calendar, per-day swimlanes for every machine and agent, punch card, milestones), projects, todos and a searchable conversation archive; devices (read-only, hidden projects, join codes), agent status and MCP (tool switches and call counts); audit, job status and settings. There is also an auto-cruising wall display (`/wall`) and a year-in-review (`/w`).
 - **Zero dependencies** — hub and device agent are single Node.js files (Node ≥ 18), no database; data is a git repo with one markdown file per memory.
 
 > The author runs it daily across 8 machines and 7 agents. Code favors "works and easy to change"; comments are in Chinese.
@@ -28,7 +28,7 @@ Claude Code, Codex, WorkBuddy / WorkBuddy AI, CodeBuddy, Hermes, OpenClaw, OpenC
 
 ```
 agent/kb-agent.mjs   device agent: sync memory, upload conversations, write digests, stdio MCP proxy, self-update
-hub/                 hub: server.mjs (HTTP + MCP), convlog (archive/journal), extras (handoff/todos/graph/semantic…), console.html + console*.css/js (console), wall.html (wall display), wrapped.html (year in review)
+hub/                 hub: server.mjs (HTTP + MCP), convlog (archive/journal), extras (handoff/todos/graph/semantic…), admin.mjs (console admin API under /console/api), console.html + console*.css/js (console), wall.html (wall display), wrapped.html (year in review)
 worker/              journal.mjs / extract.mjs — run nightly on any machine with Codex CLI
 gateway/am-gate.py   optional identity gateway (Tailscale names / libvirt VM names → zero-touch enrollment)
 gateway/am-embed.py  optional local embedding service (fastembed + bge-small-zh) for semantic search
