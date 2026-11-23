@@ -78,4 +78,25 @@ describe('演示数据', () => {
     const j = await get('/console/api/jobs');
     assert.ok(j.sync.stale_count >= 1 && j.extract.total > 0);
   });
+
+  it('拓扑页的流量、心跳条、事件带都有内容', async () => {
+    const t = await get('/console/api/topology');
+    const devs = t.devices;
+    assert.ok(devs.filter((d) => d.flow.up_24h > 0 && d.flow.down_24h > 0).length >= 4);
+    for (const d of devs) {
+      assert.equal(d.flow.hours.length, 24);
+      assert.equal(d.flow.hours.reduce((a, b) => a + b, 0), d.flow.up_24h);
+    }
+    assert.ok(devs.some((d) => d.flow.hours.filter((x) => x > 0).length >= 3));
+    assert.ok(devs.some((d) => d.agents.some((a) => a.up_24h > 0)) && devs.some((d) => d.agents.some((a) => a.down_24h > 0)));
+    assert.equal(t.hub.up_24h, devs.reduce((a, d) => a + d.flow.up_24h, 0));
+    assert.ok(t.hub.down_24h > 0);
+    assert.ok(t.reporters.length && Date.now() - Date.parse(t.reporters[0].last_active) < 12 * 3600e3 && t.reporters[0].last_op === '/v1/report');
+    assert.ok(t.extractors.length && Date.now() - Date.parse(t.extractors[0].last_active) < 3600e3 && t.extractors[0].last_op);
+    const ev = (await get('/console/api/topology/events?limit=100')).events;
+    const kinds = new Set(ev.map((e) => e.kind));
+    for (const k of ['read', 'write', 'talk', 'extract', 'report', 'console']) assert.ok(kinds.has(k), `事件缺 ${k}`);
+    assert.ok(ev.filter((e) => Date.now() - Date.parse(e.t) < 35 * 60e3).length >= 8);
+    assert.ok(new Set(ev.filter((e) => e.kind === 'read' || e.kind === 'write').map((e) => e.device)).size >= 4);
+  });
 });

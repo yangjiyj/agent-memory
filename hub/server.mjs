@@ -31,7 +31,7 @@ import { createExtras } from './extras.mjs';
 import { createAdmin } from './admin.mjs';
 
 const run = promisify(execFile);
-const VERSION = '0.9.1';
+const VERSION = '0.9.2';
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.AGENT_MEMORY_CONFIG || '/srv/agent-memory/config.json';
 const CFG = Object.assign(
@@ -96,7 +96,42 @@ function appendJsonl(file, obj) {
   fs.appendFileSync(file, JSON.stringify(obj) + '\n');
 }
 
+// usage.jsonl 只追加：近 8 天的行缓存在内存里，每次只读新追加的那一段。
+// 设备页、拓扑页、总览、周报都要扫它，原来每次整文件解析（几十 MB 时要几百毫秒）。
+// 每行解析成对象，另带不可枚举的 ms（时间戳毫秒）和 at（这一行在文件里的字节位置，稳定，可当事件 id）。
+const USAGE_KEEP = 8 * 86400e3;
+const USAGE_TAIL = 32 << 20; // 第一次最多读文件尾部这么多
+const UQ = { off: 0, rows: [], init: false, skip: false };
+function usageTail() {
+  const file = usageFile();
+  let st;
+  try { st = fs.statSync(file); } catch { UQ.rows = []; UQ.off = 0; UQ.init = false; return UQ.rows; }
+  if (!UQ.init || st.size < UQ.off) { UQ.rows = []; UQ.off = Math.max(0, st.size - USAGE_TAIL); UQ.skip = UQ.off > 0; UQ.init = true; }
+  if (st.size > UQ.off) {
+    const buf = Buffer.alloc(st.size - UQ.off);
+    let fd;
+    try { fd = fs.openSync(file, 'r'); fs.readSync(fd, buf, 0, buf.length, UQ.off); } catch { return UQ.rows; } finally { if (fd !== undefined) fs.closeSync(fd); }
+    const end = buf.lastIndexOf(10) + 1; // 只吃完整的行
+    let pos = 0;
+    if (UQ.skip) { const nl = buf.indexOf(10); if (nl < 0) return UQ.rows; pos = nl + 1; UQ.skip = false; }
+    while (pos < end) {
+      const nl = buf.indexOf(10, pos);
+      try {
+        const o = JSON.parse(buf.toString('utf8', pos, nl));
+        const ms = Date.parse(o.t);
+        if (typeof o.op === 'string' && Number.isFinite(ms)) { Object.defineProperties(o, { ms: { value: ms }, at: { value: UQ.off + pos } }); UQ.rows.push(o); } // 不可枚举：序列化和展开时不会带出去
+      } catch { /* 跳过坏行 */ }
+      pos = nl + 1;
+    }
+    UQ.off += end;
+  }
+  const cut = Date.now() - USAGE_KEEP;
+  if (UQ.rows.length && UQ.rows[0].ms < cut - 3600e3) UQ.rows = UQ.rows.filter((r) => r.ms >= cut); // 攒够一小时再清一次，不用每次都过一遍
+  return UQ.rows;
+}
+
 function readJsonl(file, sinceMs) {
+  if (sinceMs && file === usageFile() && sinceMs >= Date.now() - USAGE_KEEP + 3600e3) return usageTail().filter((o) => o.ms >= sinceMs);
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
   const out = [];
@@ -383,6 +418,28 @@ function devicePolicy(device) {
 }
 const hiddenFor = (who) => devicePolicy(who.device).hide;
 const visible = (who, project) => { const h = hiddenFor(who); return !h.length || !h.includes(String(project || '').toLowerCase()); };
+
+// 非设备令牌（报表、抽取机、历史导入）不发心跳，也不记工具调用：这里单记"最近一次请求"，拓扑页靠它判断它们在不在用。
+// 内存里每次都更新；落盘（state/last-request.json）首次立即写，之后同一令牌最多 60 秒一次，退出时再补写一次。
+const lastReqFile = () => path.join(CFG.state, 'last-request.json');
+const lastReq = new Map();
+const lastReqFlushed = {};
+let lastReqDirty = false;
+function flushLastReq() {
+  lastReqDirty = false;
+  const tmp = `${lastReqFile()}.tmp`;
+  try {
+    fs.mkdirSync(CFG.state, { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(lastReq)));
+    fs.renameSync(tmp, lastReqFile());
+    for (const k of lastReq.keys()) lastReqFlushed[k] = Date.now();
+  } catch (e) { console.error('last-request 落盘失败：', e.message); }
+}
+function noteRequest(who, p) {
+  if (who.role === 'device') return;
+  lastReq.set(who.device, { t: nowIso(), op: p });
+  if (Date.now() - (lastReqFlushed[who.device] || 0) >= 60e3) flushLastReq(); else lastReqDirty = true;
+}
 
 function logReject(who, where, reason) {
   appendJsonl(rejectFile(), { t: nowIso(), device: who.device, client: who.client, where, reason });
@@ -1617,6 +1674,7 @@ async function route(req, res, url) {
   }
   const who = authenticate(req, url);
   if (!who) return send(res, 401, { error: 'unauthorized' });
+  noteRequest(who, p);
   if (who.role === 'reporter' && !['/v1/report', '/v1/status', '/v1/watch', '/v1/weekly'].includes(p)) return send(res, 403, { error: 'forbidden' });
   // 历史导入用的 admin 令牌只能代别的设备追加对话
   if (who.role === 'admin' && !['/v1/conv/append', '/v1/status'].includes(p)) return send(res, 403, { error: 'forbidden' });
@@ -1642,7 +1700,7 @@ async function route(req, res, url) {
       const item = pipe.sessionItem(q.key || '');
       return item ? send(res, 200, item) : send(res, 404, { error: 'not found' });
     }
-    case 'POST /v1/sessions/result': return send(res, 200, await pipe.sessionResult(await readBody(req), who));
+    case 'POST /v1/sessions/result': logUsage(who, 'extract:session'); return send(res, 200, await pipe.sessionResult(await readBody(req), who));
     case 'GET /v1/titles': return send(res, 200, pipe.titles(), 'text/plain; charset=utf-8');
     case 'POST /v1/conv/append': return send(res, 200, await conv.append(await readBody(req, 24 << 20), who));
     case 'GET /v1/journal/pending': return send(res, 200, conv.pending({ limit: parseInt(q.limit, 10) || 50, includeToday: q.today === '1' }));
@@ -1650,8 +1708,8 @@ async function route(req, res, url) {
       const it = conv.item(q.key || '', q.date || '');
       return it ? send(res, 200, it) : send(res, 404, { error: 'not found' });
     }
-    case 'POST /v1/journal/result': return send(res, 200, await conv.result(await readBody(req, 8 << 20), who));
-    case 'GET /v1/weekly': return send(res, 200, extras.weekly(), 'text/plain; charset=utf-8');
+    case 'POST /v1/journal/result': logUsage(who, 'extract:journal'); return send(res, 200, await conv.result(await readBody(req, 8 << 20), who));
+    case 'GET /v1/weekly': logUsage(who, 'report:weekly'); return send(res, 200, extras.weekly(), 'text/plain; charset=utf-8');
     case 'GET /v1/handoff': logUsage(who, 'cli:handoff', q.project || q.query); return send(res, 200, extras.handoff(q), 'text/plain; charset=utf-8');
     case 'GET /v1/todos': logUsage(who, 'cli:todos', q.project); return send(res, 200, extras.renderTodos(extras.todos(q)), 'text/plain; charset=utf-8');
     case 'GET /v1/entity': logUsage(who, 'cli:entities', q.name); return send(res, 200, extras.entity(q.name), 'text/plain; charset=utf-8');
@@ -1679,7 +1737,7 @@ async function route(req, res, url) {
     case 'GET /v1/digest': return send(res, 200, digest(who, q.tool), 'text/markdown; charset=utf-8');
     case 'GET /v1/rules': return send(res, 200, rules(q.tool || who.client), 'text/markdown; charset=utf-8');
     case 'GET /v1/status': return send(res, 200, status());
-    case 'GET /v1/report': return send(res, 200, report(parseInt(q.hours, 10) || 24), 'text/plain; charset=utf-8');
+    case 'GET /v1/report': logUsage(who, 'report:report'); return send(res, 200, report(parseInt(q.hours, 10) || 24), 'text/plain; charset=utf-8');
     case 'GET /v1/search': {
       logUsage(who, 'cli:search');
       return send(res, 200, renderSearch(search({ ...q, query: q.q || q.query }), q.q || q.query || ''), 'text/plain; charset=utf-8');
@@ -1719,19 +1777,21 @@ async function main() {
     TYPES, TYPE_LABEL, LIMITS, newId, readJSON, appendJsonl, fmtLocal, byUpdated, ageDays, APP_DIR,
   });
   await pipe.fixCandidateDates();
+  for (const [k, v] of Object.entries(readJSON(lastReqFile(), {}))) if (v && typeof v.t === 'string') lastReq.set(k, { t: v.t, op: typeof v.op === 'string' ? v.op : null });
   conv = createConvLog({ CFG, nowIso, redactSecrets, findSecret, UserError, readJSON, commit, serial });
   vault2 = createVault({ CFG, store, conv, TYPE_LABEL, fmtLocal, byUpdated, ageDays });
   extras = createExtras({ CFG, store, conv, nowIso, readJSON, appendJsonl, serial, writeEntry, commit, byUpdated, ageDays, TYPE_LABEL, UserError, readJsonl, usageFile, findSecret, redactSecrets });
   admin = createAdmin({
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
-    heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode, VERSION, agentVersion,
+    heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode, VERSION, agentVersion, redactSecrets, usageTail,
+    lastRequest: (name) => lastReq.get(name) || null,
     tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
     listJoinCodes, revokeJoinCode,
   });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
   setTimeout(vecTick, 30e3);
   setInterval(vecTick, 10 * 60e3);
-  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { conv.flush(); } finally { process.exit(0); } });
+  for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { conv.flush(); if (lastReqDirty) flushLastReq(); } finally { process.exit(0); } });
   const tick = () => pipe.autoApprove().catch((e) => console.error('auto-approve failed:', e));
   tick();
   setInterval(tick, 3600e3);

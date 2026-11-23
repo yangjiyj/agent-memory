@@ -518,6 +518,16 @@ function genSessions() {
       buildSession({ k, dev: r.dev, tool, proj: r.p, kind: 'deploy', ver: r.ver, start: dayStart(k) + range(14, 18) * 3600e3 + rnd(50) * MIN, pairs: range(3, 5) });
     }
   }
+  // 近几个小时里零散的几个会话（其中两个设备在最近半小时内还有新对话），让拓扑页的流量、心跳条和事件带有内容
+  buildSession({ k: 0, dev: 'laptop', tool: 'hermes', plan: makePlan({ proj: 'mobile-app', k: 0, kind: 'bugfix' }), start: NOW - 170 * MIN, pairs: 5 });
+  buildSession({ k: 0, dev: 'lab-vm', tool: 'opencode', plan: makePlan({ proj: 'data-pipeline', k: 0, kind: 'research' }), start: NOW - 6 * 3600e3, pairs: 4 });
+  buildSession({ k: 0, dev: 'work-mac', tool: 'codex', plan: makePlan({ proj: 'shop-api', k: 0, kind: 'review' }), start: NOW - 9 * 3600e3, pairs: 4 });
+  const live3 = makePlan({ proj: 'mobile-app', k: 0, kind: 'feature' });
+  live3.status = 'ongoing';
+  buildSession({ k: 0, dev: 'laptop', tool: 'claude-code', plan: live3, start: NOW - 95 * MIN, pairs: 7, live: true });
+  const live4 = makePlan({ proj: 'shop-api', k: 0, kind: 'bugfix' });
+  live4.status = 'ongoing';
+  buildSession({ k: 0, dev: 'work-mac', tool: 'claude-code', plan: live4, start: NOW - 70 * MIN, pairs: 6, live: true });
   // 最近 20 分钟内"正在干活"的两个会话
   const live1 = makePlan({ proj: 'shop-api', k: 0, kind: 'feature' });
   live1.status = 'ongoing';
@@ -526,7 +536,7 @@ function genSessions() {
   live2.status = 'ongoing';
   buildSession({ k: 0, dev: 'build-server', tool: 'codex', plan: live2, start: NOW - 31 * MIN, pairs: 8, live: true });
   // 实时会话的最后一条消息要落在最近 20 分钟里
-  for (const [s, ago] of [[sessions[sessions.length - 2], 3], [sessions[sessions.length - 1], 9]]) {
+  for (const [s, ago] of [[sessions[sessions.length - 4], 17], [sessions[sessions.length - 3], 12], [sessions[sessions.length - 2], 3], [sessions[sessions.length - 1], 9]]) {
     const last = Date.parse(s.messages[s.messages.length - 1].ts);
     const shift = NOW - ago * MIN - last;
     for (const m of s.messages) m.ts = iso(Date.parse(m.ts) + shift);
@@ -880,10 +890,16 @@ async function main() {
   hb['journal-bot'] = { last_seen: iso(NOW - 38 * MIN), agent_version: '', hostname: '', sources: {}, wiring: {} };
   hb['daily-report'] = { last_seen: iso(NOW - 7 * 3600e3), agent_version: '', hostname: '', sources: {}, wiring: {} };
   writeJson(p('state', 'heartbeats.json'), hb);
+  // 抽取机和日报令牌最近一次请求（真实中心里由中心自己记）
+  writeJson(p('state', 'last-request.json'), { 'journal-bot': { t: iso(NOW - 3 * MIN), op: '/v1/journal/result' }, 'daily-report': { t: iso(NOW - 7 * 3600e3), op: '/v1/report' } });
 
   // 2) 调用记录：最近 14 天，工作日多、晚上有峰值；home-nas 在停止同步之后就没有了
   const usagePath = p('state', 'usage.jsonl');
-  const existing = fs.existsSync(usagePath) ? fs.readFileSync(usagePath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+  // 生成数据时自己调接口留下的记录都是"现在"的：抽取机的写日志记录丢掉（下面单独造），其余散到前 0.5～21 小时，
+  // 免得最近几分钟全是它们；最近半小时的事件由下面的 recent 单独造
+  const existing = (fs.existsSync(usagePath) ? fs.readFileSync(usagePath, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [])
+    .filter((u) => !u.op.startsWith('extract:'))
+    .map((u) => (Date.parse(u.t) >= NOW - 2 * MIN ? { ...u, t: iso(NOW - range(36, 1260) * MIN) } : u));
   const OPS = { memory_search: 38, memory_get: 18, memory_timeline: 7, conversation_search: 6, conversation_get: 4, memory_recent: 6, memory_digest: 5, memory_remember: 4, memory_update: 1, memory_handoff: 3, memory_todos: 2.4, memory_entities: 2.2, kb_search: 1.4, kb_read: 0.9, memory_retire: 0.3 };
   const QUERIES = ['购物车 库存', '部署 检查清单', '证书 续期', '灰度 开关', '备份 恢复', '日报 口径', '推送 权限', '订单 超时', '限流', '迁移 回滚', '版本号', '优惠券 并发', '健康检查', '时区', '索引 慢查询', '支付 回调 幂等', '启动 白屏', '缓存 预热'];
   const usage = [];
@@ -895,7 +911,7 @@ async function main() {
     if (op === 'memory_handoff') return pick(PNAMES);
     if (op === 'memory_entities') return pick([...PNAMES, 'build-server', 'home-nas']);
     if (op === 'memory_todos') return pick(['', pick(PNAMES)]);
-    if (op === 'memory_remember') return pick(['decision', 'pitfall', 'status']);
+    if (op === 'memory_remember') return pick(['灰度发布先放 10%', '预发库迁移要避开整点', '证书续期提前一周提醒', '限流阈值按租户配置', '日报口径以订单创建时间为准', '回滚脚本必须保留上一版镜像']);
     return '';
   };
   for (let k = 13; k >= 0; k--) {
@@ -920,6 +936,17 @@ async function main() {
   }
   // 几次整理操作（审计页里的"写入"）
   for (const [k, op, dd] of [[5, 'manage:retire', 'm-demo'], [3, 'manage:approve', 'c-demo'], [2, 'console:settings', 'device_labels'], [1, 'manage:merge', 'm-demo2']]) usage.push({ t: iso(dayStart(k) + range(10, 20) * 3600e3), device: 'desktop', client: 'console', op, d: dd });
+  // 近 24 小时里拓扑页的事件带要用的：最近半小时的几次读写、报表被拉取、抽取机干活、控制台里的管理操作
+  const recent = [
+    ['desktop', 'claude-code', 'memory_search', '购物车 库存', 1], ['laptop', 'hermes', 'memory_get', pick(entryIds).id, 2], ['build-server', 'codex', 'memory_search', '部署 检查清单', 4],
+    ['desktop', 'codex', 'memory_remember', '灰度发布先放 10%', 5], ['work-mac', 'claude-code', 'memory_timeline', 'days=3', 7], ['lab-vm', 'opencode', 'conversation_search', '白屏', 9],
+    ['desktop', 'claude-code', 'memory_get', pick(entryIds).id, 11], ['laptop', 'claude-code', 'memory_handoff', 'mobile-app', 14], ['build-server', 'openclaw', 'memory_search', '证书 续期', 18],
+    ['work-mac', 'codex', 'memory_search', '推送 权限', 23], ['desktop', 'claude-code', 'memory_update', pick(entryIds).id, 27], ['laptop', 'workbuddy', 'memory_todos', '', 33],
+  ];
+  for (const [device, client, op, dd, ago] of recent) usage.push({ t: iso(NOW - ago * MIN - rnd(40) * 1000), device, client, op: `tool:${op}`, ...(dd ? { d: dd } : {}) });
+  for (const ago of [3, 21, 44, 95, 170]) usage.push({ t: iso(NOW - ago * MIN), device: 'journal-bot', client: 'unknown', op: ago % 2 ? 'extract:journal' : 'extract:session' });
+  for (const [ago, op] of [[7 * 60, 'report:report'], [31 * 60, 'report:weekly']]) usage.push({ t: iso(NOW - ago * MIN), device: 'daily-report', client: 'unknown', op });
+  usage.push({ t: iso(NOW - 52 * MIN), device: 'desktop', client: 'console', op: 'console:device-set', d: 'work-mac readonly' }, { t: iso(NOW - 3 * 3600e3), device: 'desktop', client: 'console', op: 'manage:approve', d: 'c-demo' });
   const merged = [...usage, ...existing].sort((a, b) => a.t.localeCompare(b.t));
   fs.writeFileSync(usagePath, `${merged.map((u) => JSON.stringify(u)).join('\n')}\n`);
 

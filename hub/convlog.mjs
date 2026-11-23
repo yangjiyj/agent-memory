@@ -66,6 +66,7 @@ export function createConvLog(ctx) {
 
   // 设备增量上传：base 必须等于中心已有条数，否则回告实际条数让设备对齐；replace 时整份重来
   function append(p, who) {
+    recentCache = null;
     if (!mounted()) throw new UserError('对话存档盘没挂上，稍后再传');
     const device = who.role === 'admin' && p.device ? String(p.device).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40) : who.device;
     const tool = String(p.tool || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
@@ -741,6 +742,62 @@ export function createConvLog(ctx) {
     return { now: nowIso(), devices: byDev, recent: recent.slice(0, 14), today: { segments: segs, messages: msgs } };
   }
 
+  // 近一段时间的消息时间：{ 设备: { 智能体: [毫秒时间戳…] } }，给拓扑页算读写流量和心跳条。
+  // 只读"最后一条消息落在窗口里"的会话文件的尾部（存档是追加写的，时间基本递增），不够再加倍；
+  // 不含自动任务会话（AUTO_CWD）。结果缓存 60 秒，有新上传就作废。
+  let recentCache = null;
+  function tailTimes(e, sinceMs) {
+    let fd;
+    try { fd = fs.openSync(path.join(root, e.file), 'r'); } catch { return []; }
+    try {
+      const size = fs.fstatSync(fd).size;
+      let len = Math.min(size, 64 * 1024);
+      for (;;) {
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, size - len);
+        let text = buf.toString('utf8');
+        if (len < size) { const nl = text.indexOf('\n'); text = nl < 0 ? '' : text.slice(nl + 1); }
+        const ts = [];
+        for (const line of text.split('\n')) {
+          if (!line) continue;
+          try { const ms = Date.parse(JSON.parse(line).t); if (Number.isFinite(ms)) ts.push(ms); } catch { /* 坏行跳过 */ }
+        }
+        if (len >= size || (ts.length && Math.min(...ts) < sinceMs)) return ts.filter((x) => x >= sinceMs);
+        len = Math.min(size, len * 4);
+      }
+    } finally { fs.closeSync(fd); }
+  }
+  function recentMessages(sinceMs) {
+    if (!recentCache || recentCache.since > sinceMs || Date.now() - recentCache.at > 60e3) {
+      const since = sinceMs - 3600e3;
+      const by = {};
+      for (const e of Object.values(index)) {
+        if (!e.last || Date.parse(e.last) < since || AUTO_CWD.test(e.cwd || '')) continue;
+        const ts = tailTimes(e, since);
+        if (ts.length) ((by[e.device] ||= {})[e.tool] ||= []).push(...ts);
+      }
+      recentCache = { at: Date.now(), since, by };
+    }
+    const out = {};
+    for (const [d, tools] of Object.entries(recentCache.by)) {
+      for (const [t, xs] of Object.entries(tools)) {
+        const ys = xs.filter((x) => x >= sinceMs);
+        if (ys.length) (out[d] ||= {})[t] = ys;
+      }
+    }
+    return out;
+  }
+
+  // 最近有新消息的会话（一个会话一条，时间是它最近一条消息），给拓扑页的事件流用
+  function recentSessions(sinceMs) {
+    const out = [];
+    for (const [key, e] of Object.entries(index)) {
+      if (!e.last || !e.n || Date.parse(e.last) <= sinceMs || AUTO_CWD.test(e.cwd || '')) continue;
+      out.push({ ref: refOf(key), device: e.device, tool: e.tool, last: e.last, project: journal.get(localDay(e.last))?.[key]?.project || '' });
+    }
+    return out;
+  }
+
   // 某一天的全部段（泳道图和详情用）
   function vizDay(date) {
     const d = parseDate(date, today());
@@ -792,5 +849,5 @@ export function createConvLog(ctx) {
     return out;
   }
 
-  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, readMessages, index: () => index, journal: () => journal, refOf };
+  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, recentMessages, recentSessions, readMessages, index: () => index, journal: () => journal, refOf };
 }

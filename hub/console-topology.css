@@ -1,11 +1,23 @@
 /* 拓扑页：只用 console.css 的令牌，类名统一 tp- 前缀。
- * 光点 = 带圆头的 stroke-dasharray（点长 .1，间隔 --p）+ stroke-dashoffset 动画；速度 = --p / --t。 */
+ * 光点 = 带圆头的 stroke-dasharray（点长 .1，间隔 --p）+ stroke-dashoffset 动画；速度 = --sp（像素/秒），周期 = --p / --sp。
+ * 写入（设备→中心）青色、读取（中心→设备）琥珀色，两串光点上下错开；密度 u/d 1–3 档，线粗细 w 0–4 档。 */
 
-.tp-prob { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+:root { --tp-up: 84, 214, 240; --tp-dn: 255, 184, 76; }
+.tp-bar { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; min-height: 30px; }
+.tp-prob { flex: 1; display: flex; flex-wrap: wrap; gap: 8px; }
 .tp-prob[hidden] { display: none; }
+.tp-bar > .tp-lg { margin-left: auto; }
 .tp-chip { font: inherit; font-size: 12.5px; color: #f5b08f; background: rgba(217, 89, 38, .12); border: 1px solid rgba(217, 89, 38, .5); border-radius: 999px; padding: 3px 12px; cursor: pointer; text-align: left;
   box-shadow: 0 0 14px -4px rgba(217, 89, 38, .6); transition: background .15s; }
 .tp-chip:hover { background: rgba(217, 89, 38, .22); }
+.tp-lg { display: inline-flex; align-items: center; gap: 6px; height: 28px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.tp-lg i { width: 18px; height: 3px; border-radius: 3px; margin-left: 8px; }
+.tp-lg i:first-child { margin-left: 0; }
+.tp-lg i.up { background: rgb(var(--tp-up)); box-shadow: 0 0 8px rgb(var(--tp-up)); }
+.tp-lg i.dn { background: rgb(var(--tp-dn)); box-shadow: 0 0 8px rgb(var(--tp-dn)); }
+.tp-fsb { flex: none; width: 30px; height: 28px; display: grid; place-items: center; padding: 0; color: var(--text-secondary); background: rgba(57, 135, 229, .12); border: 1px solid var(--panel-line); border-radius: 8px; cursor: pointer; transition: .15s; }
+.tp-fsb:hover, .tp-fsb[aria-pressed="true"] { color: #fff; background: rgba(57, 135, 229, .3); border-color: rgba(134, 182, 239, .45); }
+.tp-fsb svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 .tp-panel { padding: 0; overflow: hidden; margin-bottom: 0; background: radial-gradient(900px 420px at 55% 45%, rgba(57, 135, 229, .10), transparent 70%), var(--panel); }
 .tp-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: rgba(134, 182, 239, .3) transparent; }
@@ -13,24 +25,52 @@
 .tp-svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 
 /* ---------- 连线 ---------- */
-.tp-base { fill: none; stroke-width: 1.8; stroke-linecap: round; opacity: .4; transition: opacity .4s, stroke-width .4s; }
+.tp-e { --bw: 1.8; --sp: 26; }
+.tp-base { fill: none; stroke-width: var(--bw); stroke-linecap: round; opacity: .4; transition: opacity .4s, stroke-width .4s; }
+.tp-e.w1 { --bw: 1.8; } .tp-e.w2 { --bw: 2.4; } .tp-e.w3 { --bw: 3.1; } .tp-e.w4 { --bw: 3.9; }
+.tp-e.bus.w3, .tp-e.bus.w4 { --bw: 2.4; } /* 两列时的总线挤在一起，线别太粗 */
 .tp-dots { fill: none; stroke-linecap: round; opacity: 0; stroke-dasharray: .1 var(--p, 30); }
-.tp-halo { stroke: rgb(var(--cr)); stroke-width: 9; }
-.tp-core { stroke: #dcebff; stroke-width: 3.4; }
-.tp-e.ok { --p: 34; --t: 1.6s; }
-.tp-e.live { --p: 15; --t: .32s; }
-.tp-e.ok .tp-dots, .tp-e.live .tp-dots { animation: tp-flow var(--t) linear infinite; }
-.tp-e.ok .tp-halo { opacity: .16; }
-.tp-e.ok .tp-core { opacity: .85; }
-.tp-e.live .tp-halo { opacity: .3; stroke-width: 11; }
-.tp-e.live .tp-core { opacity: 1; stroke: #fff; stroke-width: 3.8; }
+.tp-halo { stroke-width: 9; }
+.tp-core { stroke-width: 3.2; }
+.tp-arw { visibility: hidden; opacity: .9; }
+.tp-up { --fc: var(--tp-up); } .tp-dn { --fc: var(--tp-dn); }
+.tp-up .tp-halo, .tp-dn .tp-halo { stroke: rgb(var(--fc)); }
+.tp-up .tp-core { stroke: #d2f8ff; } .tp-dn .tp-core { stroke: #fff1d2; }
+.tp-up .tp-arw { fill: rgb(var(--tp-up)); } .tp-dn .tp-arw { fill: rgb(var(--tp-dn)); }
+.tp-up .tp-dots { animation: tp-flow calc(var(--p) / var(--sp) * 1s) linear infinite; }
+.tp-dn .tp-dots { animation: tp-flow-r calc(var(--p) / var(--sp) * 1s) linear infinite; }
+.tp-e.ok { --sp: 26; } .tp-e.live { --sp: 52; } .tp-e.idle { --sp: 13; }
+.tp-e.live .tp-base { opacity: .8; stroke-width: calc(var(--bw) + .5); }
 .tp-e.ok .tp-base { opacity: .55; }
-.tp-e.live .tp-base { opacity: .8; stroke-width: 2.2; }
 .tp-e.idle .tp-base { opacity: .3; }
+/* 密度：1 档稀、3 档密；只有同步正常或空闲的线才出光点（超时、暂停、没配的不出） */
+.tp-e.u1 .tp-up, .tp-e.d1 .tp-dn { --p: 64; }
+.tp-e.u2 .tp-up, .tp-e.d2 .tp-dn { --p: 36; }
+.tp-e.u3 .tp-up, .tp-e.d3 .tp-dn { --p: 21; }
+.tp-e:is(.ok, .live, .idle):is(.u1, .u2, .u3) .tp-up .tp-halo, .tp-e:is(.ok, .live, .idle):is(.d1, .d2, .d3) .tp-dn .tp-halo { opacity: .22; }
+.tp-e:is(.ok, .live, .idle):is(.u1, .u2, .u3) .tp-up .tp-core, .tp-e:is(.ok, .live, .idle):is(.d1, .d2, .d3) .tp-dn .tp-core { opacity: .9; }
+.tp-e.live:is(.u1, .u2, .u3) .tp-up .tp-halo, .tp-e.live:is(.d1, .d2, .d3) .tp-dn .tp-halo { opacity: .36; stroke-width: 11; }
+.tp-e.live:is(.u1, .u2, .u3) .tp-up .tp-core, .tp-e.live:is(.d1, .d2, .d3) .tp-dn .tp-core { opacity: 1; }
+.tp-e.idle:is(.u1, .u2, .u3) .tp-up .tp-dots, .tp-e.idle:is(.d1, .d2, .d3) .tp-dn .tp-dots { filter: opacity(.55); }
+/* 不是设备流量的线（中心→抽取机、报表、浏览器、仓库、存档）：一串中性的光点，方向是中心往外 */
+.tp-neutral .tp-halo { stroke: rgb(var(--cr)); }
+.tp-neutral .tp-core { stroke: #dcebff; }
+.tp-e.ok { --p: 34; } .tp-e.live { --p: 15; }
+.tp-e.ok .tp-neutral .tp-dots, .tp-e.live .tp-neutral .tp-dots { animation: tp-flow calc(var(--p) / var(--sp) * 1s) linear infinite; }
+.tp-e.ok .tp-neutral .tp-halo { opacity: .16; }
+.tp-e.ok .tp-neutral .tp-core { opacity: .85; }
+.tp-e.live .tp-neutral .tp-halo { opacity: .3; stroke-width: 11; }
+.tp-e.live .tp-neutral .tp-core { opacity: 1; stroke: #fff; stroke-width: 3.6; }
 .tp-e.off .tp-base { stroke: #4a5470; stroke-dasharray: 3 7; opacity: .5; stroke-width: 1.4; }
 .tp-e.stale .tp-base { stroke: #ef5b5b; stroke-dasharray: 6 6; opacity: .85; stroke-width: 1.8; }
 .tp-e.paused .tp-base { stroke: #5a6482; opacity: .45; }
 @keyframes tp-flow { to { stroke-dashoffset: calc(var(--p) * -1); } }
+@keyframes tp-flow-r { from { stroke-dashoffset: calc(var(--p) * -1); } to { stroke-dashoffset: 0; } }
+
+/* 一次性脉冲：dash 长 7（总长按 100 算），起止位置由 JS 的 Web Animations 控制 */
+.tp-pulse { fill: none; stroke-linecap: butt; stroke-dasharray: 7 101; stroke-dashoffset: 7; pointer-events: none; }
+.tp-ph { opacity: .38; filter: blur(2.5px); }
+.tp-pc { opacity: 1; }
 
 /* ---------- 节点 ---------- */
 .tp-n { position: absolute; box-sizing: border-box; padding: 8px 12px; overflow: hidden; cursor: pointer; outline: none; color: var(--text-secondary); font-size: 12px; line-height: 1.35;
@@ -42,15 +82,32 @@
 .tp-n em { font-style: normal; color: var(--text-muted); font-size: 11px; margin-left: auto; padding-left: 8px; white-space: nowrap; }
 .tp-n .r1 { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
 .tp-n .r1 b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tp-n .r2 { display: flex; gap: 4px; margin-top: 5px; overflow: hidden; min-height: 17px; }
-.tp-n.tight { padding-top: 5px; padding-bottom: 5px; }
-.tp-n.tight .r2 { margin-top: 3px; }
+.tp-n .r2 { display: flex; gap: 4px; margin-top: 4px; overflow: hidden; min-height: 16px; }
 .tp-n .cap { color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
 .tp-n .cap.off { color: var(--text-muted); font-size: 12.5px; margin-top: 8px; }
 .tp-n .cap.bad { color: #f08a8a; font-size: 12.5px; margin-top: 8px; }
 .tp-n .big { font-size: 12px; margin-top: 7px; white-space: nowrap; }
 .tp-n .big b { font-size: 19px; text-shadow: 0 0 14px rgba(var(--cr), .7); }
 .tp-n .m { margin-top: 6px; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 写入 ↑ / 读取 ↓ 的数字：颜色和连线上的光点一致 */
+.tp-fl { display: inline-flex; gap: 7px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tp-fl u { text-decoration: none; font-size: 11.5px; font-weight: 600; }
+.tp-fl u.up { color: rgb(var(--tp-up)); } .tp-fl u.dn { color: rgb(var(--tp-dn)); }
+.tp-n .r1 .tp-fl { margin-left: auto; flex: none; }
+.tp-n .r1 em + .tp-fl { margin-left: 6px; }
+.tp-n .r1 b { flex: 0 1 auto; }
+
+/* 设备：24 格心跳条贴着节点底边 */
+.tp-dev { padding: 4px 12px 6px; display: flex; flex-direction: column; justify-content: center; }
+.tp-dev .r1 { line-height: 16px; }
+.tp-dev .r2 { min-height: 15px; margin-top: 3px; }
+.tp-dev .tp-tg { line-height: 14px; }
+.tp-hb { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 3px; display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+.tp-hb i { display: block; border-radius: 1px; background: rgb(var(--tp-up)); box-shadow: 0 0 4px rgba(var(--tp-up), .6); }
+.tp-hb i.z { background: rgba(134, 160, 210, .2); box-shadow: none; }
+.tp-dev.compact { padding-top: 3px; padding-bottom: 8px; border-radius: 11px; }
+.tp-hb.big { position: static; height: 8px; margin: 12px 0 4px; }
 
 .tp-tg { display: inline-flex; align-items: center; font-size: 10.5px; line-height: 16px; padding: 0 7px; border-radius: 999px; white-space: nowrap; color: var(--text-muted); border: 1px solid rgba(148, 163, 184, .28); }
 .tp-tg.live { color: var(--text-primary); border-color: rgba(134, 182, 239, .7); box-shadow: 0 0 10px -2px var(--glow); }
@@ -77,15 +134,43 @@
 /* 有问题的节点描红 */
 .tp-n.bad { border-color: rgba(239, 91, 91, .75); box-shadow: 0 0 22px -4px rgba(239, 91, 91, .75); }
 
+/* 事件到达：终点节点闪一下（颜色跟事件种类走） */
+.tp-n.tp-flash { animation: tp-flash .8s ease-out; }
+@keyframes tp-flash { 0% { border-color: rgb(var(--fc)); box-shadow: 0 0 34px 2px rgba(var(--fc), .95), inset 0 0 18px rgba(var(--fc), .35); } 100% { } }
+
+/* 悬停事件时：它走的那条路亮着，其余变暗 */
+.tp-stage.hl .tp-e { opacity: .14; transition: opacity .15s; }
+.tp-stage.hl .tp-e.rt { opacity: 1; }
+.tp-stage.hl .tp-e.rt .tp-base { opacity: .95; }
+.tp-stage.hl .tp-n { opacity: .3; }
+.tp-stage.hl .tp-n.rt { opacity: 1; }
+
 /* 中心：最大、发光 */
 .tp-hub { padding: 14px 16px; border-radius: 22px; border-color: rgba(var(--cr), .7);
   background: radial-gradient(circle at 30% 20%, rgba(144, 133, 233, .30), transparent 60%), linear-gradient(160deg, rgba(34, 40, 92, .95), rgba(14, 20, 46, .96));
   animation: tp-hub 4.5s ease-in-out infinite; }
 .tp-hub .r1 { font-size: 15px; }
-.tp-hub .bigger { font-size: 40px; line-height: 1.1; margin-top: 18px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; text-shadow: 0 0 22px rgba(144, 133, 233, .9); }
-.tp-hub .hr { height: 1px; margin: 16px 0 10px; background: linear-gradient(90deg, transparent, rgba(144, 133, 233, .5), transparent); }
+.tp-hub .bigger { font-size: 40px; line-height: 1.1; margin-top: 14px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; text-shadow: 0 0 22px rgba(144, 133, 233, .9); }
+.tp-hub .hr { height: 1px; margin: 14px 0 8px; background: linear-gradient(90deg, transparent, rgba(144, 133, 233, .5), transparent); }
 .tp-hub .m { font-size: 12.5px; }
+.tp-hub .m.tp-fl { display: flex; }
 @keyframes tp-hub { 50% { box-shadow: 0 0 46px -2px rgba(var(--cr), .85), 0 0 100px -14px rgba(57, 135, 229, .7); } }
+
+/* ---------- 事件带 ---------- */
+.tp-ev { padding: 8px 16px 8px; border-top: 1px solid var(--panel-line); background: rgba(8, 12, 26, .35); }
+.tp-ev[hidden] { display: none; }
+.tp-ev h4 { margin: 0 0 4px; font-size: 12px; font-weight: 500; letter-spacing: 1px; color: var(--text-muted); }
+.tp-ev ul { list-style: none; margin: 0; padding: 0; }
+.tp-ev li { display: grid; grid-template-columns: 8px 72px minmax(0, 150px) minmax(0, 96px) minmax(0, 1fr); align-items: center; column-gap: 10px; height: 26px; padding: 0 6px; border-radius: 6px; font-size: 12.5px; color: var(--text-secondary); cursor: default; transition: background .15s; }
+.tp-ev li:hover { background: rgba(57, 135, 229, .12); }
+.tp-ev li i { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
+.tp-ev li time { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tp-ev li b { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-ev li .ag { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-ev li .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.tp-ev li.new { animation: tp-in .5s ease-out; }
+@keyframes tp-in { from { opacity: 0; transform: translateY(-6px); background: rgba(134, 182, 239, .22); } }
+@media (max-height: 999px) { .tp-ev li:nth-child(n + 7) { display: none; } }
 
 /* ---------- 详情抽屉 ---------- */
 .tp-drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 41; width: min(400px, 100vw); display: flex; flex-direction: column; transform: translateX(100%); visibility: hidden;
@@ -106,14 +191,40 @@
 .tp-kv .tp-dot { margin-right: 4px; }
 .tp-kv .mono { font: 12px ui-monospace, Menlo, Consolas, monospace; }
 .tp-drawer .ag { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid rgba(110, 150, 255, .08); font-size: 13px; }
-.tp-drawer .ag em { font-style: normal; color: var(--text-muted); font-size: 12px; }
+.tp-drawer .ag .tp-fl { margin-left: auto; }
+.tp-drawer .ag em { font-style: normal; color: var(--text-muted); font-size: 12px; min-width: 64px; text-align: right; }
 .tp-prb { margin-bottom: 10px; padding: 8px 10px; border-radius: 10px; font-size: 12.5px; color: #f5b08f; background: rgba(217, 89, 38, .12); border: 1px solid rgba(217, 89, 38, .45); }
+.tp-opt { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-top: 1px solid rgba(110, 150, 255, .08); font-size: 13.5px; color: var(--text-primary); }
+.tp-opt:first-of-type { margin-top: 10px; }
+.tp-sw { position: relative; flex: none; width: 40px; height: 22px; padding: 0; border-radius: 999px; cursor: pointer; background: rgba(148, 163, 184, .25); border: 1px solid rgba(148, 163, 184, .35); transition: background .2s, border-color .2s; }
+.tp-sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #dbe4f7; transition: transform .2s; }
+.tp-sw.on { background: rgba(57, 135, 229, .7); border-color: rgba(134, 182, 239, .8); }
+.tp-sw.on::after { transform: translateX(18px); }
+.tp-sw:disabled { opacity: .55; cursor: default; }
+.tp-sw:focus-visible { outline: 2px solid rgba(134, 182, 239, .8); outline-offset: 2px; }
+
+/* ---------- 全屏：背景要有，事件带保留 ---------- */
+.tp:fullscreen, .tp.tp-fs { background: radial-gradient(1100px 640px at 55% 30%, rgba(57, 135, 229, .14), transparent 70%), var(--surface); padding: 14px 18px; overflow: auto; }
+.tp.tp-fs { position: fixed; inset: 0; z-index: 40; }
+.tp:fullscreen::backdrop { background: var(--surface); }
 
 /* ---------- 停动画：离开页面、标签页切走、系统要求减少动效 ---------- */
 .tp-paused .tp-dots, .tp-paused .tp-n, .tp-paused .tp-dot { animation-play-state: paused !important; }
 @media (prefers-reduced-motion: reduce) {
-  .tp-dots, .tp-n, .tp-dot { animation: none !important; }
-  .tp-e.ok .tp-dots, .tp-e.live .tp-dots { opacity: .9; }
+  .tp-dots, .tp-n, .tp-dot, .tp-ev li.new, .tp-n.tp-flash { animation: none !important; }
+  .tp-pulses { display: none; }
+  /* 光点不动：改成连线中段的静态方向标记（青向中心、琥珀向设备），按密度显示 */
+  .tp-e:is(.ok, .live, .idle):is(.u1, .u2, .u3) .tp-up .tp-arw, .tp-e:is(.ok, .live, .idle):is(.d1, .d2, .d3) .tp-dn .tp-arw { visibility: visible; }
+  .tp-neutral .tp-dots { display: none; }
   .tp-drawer, .tp-drawer.on { transition: none; }
 }
-@media (max-width: 960px) { .tp-drawer { width: 100vw; } }
+
+/* ---------- 窄屏：画布在自己的容器里横向滚，事件带换行，抽屉铺满 ---------- */
+@media (max-width: 960px) {
+  .tp-drawer { width: 100vw; }
+  .tp-bar { flex-wrap: wrap; }
+  .tp-ev li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px 8px; height: auto; min-height: 26px; padding: 5px 6px; }
+  .tp-ev li i { align-self: center; flex: none; }
+  .tp-ev li .ag:empty { display: none; }
+  .tp-ev li .tx { flex: 1 1 100%; padding-left: 16px; white-space: normal; overflow: visible; }
+}

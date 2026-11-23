@@ -47,16 +47,24 @@ async function startHub(opts = {}) {
   for (const name of opts.peers || []) peers[name] = { peer: `tailnet:${name}`, aliases: [`tailnet:${name}`], os: 'linux', seen: new Date().toISOString(), first: new Date().toISOString() };
   fs.writeFileSync(p('state/peers.json'), JSON.stringify(peers));
 
-  const child = spawn(process.execPath, [SERVER], { env: { ...process.env, AGENT_MEMORY_CONFIG: p('config.json') }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let child = null;
   let log = '';
-  child.stdout.on('data', (b) => { log += b; });
-  child.stderr.on('data', (b) => { log += b; });
   const base = `http://127.0.0.1:${port}`;
-  for (let i = 0; ; i++) {
-    try { if ((await fetch(`${base}/health`)).ok) break; } catch { /* 还没起来 */ }
-    if (i > 100 || child.exitCode !== null) throw new Error(`中心没起来：${log}`);
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  const launch = async () => {
+    child = spawn(process.execPath, [SERVER], { env: { ...process.env, AGENT_MEMORY_CONFIG: p('config.json') }, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.on('data', (b) => { log += b; });
+    child.stderr.on('data', (b) => { log += b; });
+    for (let i = 0; ; i++) {
+      try { if ((await fetch(`${base}/health`)).ok) break; } catch { /* 还没起来 */ }
+      if (i > 100 || child.exitCode !== null) throw new Error(`中心没起来：${log}`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  };
+  const halt = async () => {
+    child.kill('SIGTERM');
+    await new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)));
+  };
+  await launch();
   const hub = {
     dir, base, port, tokenOf, path: p,
     // 浏览器身份（网关认出的）调用控制台接口
@@ -86,9 +94,9 @@ async function startHub(opts = {}) {
       return { status: res.status, json: await res.json().catch(() => null) };
     },
     read: (name) => JSON.parse(fs.readFileSync(p(name), 'utf8')),
+    async restart() { await halt(); await launch(); },
     async stop() {
-      child.kill('SIGTERM');
-      await new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)));
+      await halt();
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };
@@ -97,7 +105,7 @@ async function startHub(opts = {}) {
 
 const TOKENS = { 'my-laptop': { token: 'tok-laptop-secret-value' }, 'build-server': { token: 'tok-build-secret-value' } };
 const TOKEN_HASHES = (hub) => Object.values(hub.read('tokens.json').devices).map((v) => v.sha256);
-const ENDPOINTS = [['GET', 'devices'], ['POST', 'devices/build-server'], ['POST', 'join-code'], ['GET', 'join-codes'], ['POST', 'join-code/revoke'], ['GET', 'mcp'], ['POST', 'mcp/tool'], ['GET', 'jobs'], ['GET', 'topology'], ['GET', 'settings'], ['POST', 'settings'], ['GET', 'conv/search?q=x'], ['GET', 'conv/abcdef12']];
+const ENDPOINTS = [['GET', 'devices'], ['POST', 'devices/build-server'], ['POST', 'join-code'], ['GET', 'join-codes'], ['POST', 'join-code/revoke'], ['GET', 'mcp'], ['POST', 'mcp/tool'], ['GET', 'jobs'], ['GET', 'topology'], ['GET', 'topology/events'], ['GET', 'settings'], ['POST', 'settings'], ['GET', 'conv/search?q=x'], ['GET', 'conv/abcdef12']];
 
 describe('控制台接口：身份', () => {
   let hub;
@@ -536,6 +544,141 @@ describe('控制台接口：拓扑', () => {
   it('只支持 GET', async () => {
     const hub = await startHub({ tokens: TOKENS, peers: ['my-laptop'] });
     try { assert.equal((await hub.post('topology', {})).status, 405); } finally { await hub.stop(); }
+  });
+});
+
+describe('控制台接口：拓扑的实时数据', () => {
+  const ROLES = { ...TOKENS, nightly: { token: 'tok-ext-secret-value', role: 'extractor' }, daily: { token: 'tok-rep-secret-value', role: 'reporter' } };
+  const rep = (hub, p) => hub.device('daily', p);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const usage = (hub) => { try { return fs.readFileSync(hub.path('state/usage.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } };
+
+  it('报表令牌：调 /v1/report、/v1/weekly 记 usage，/v1/status 和 /v1/watch（探活、巡检，调得勤）不记；最近活动和最近操作准确', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'] });
+    try {
+      const before = (await hub.get('topology')).json.reporters[0];
+      assert.equal(before.last_active, null);
+      assert.equal(before.last_op, null);
+      assert.equal((await rep(hub, '/v1/status')).status, 200);
+      assert.ok(!usage(hub).some((u) => u.device === 'daily'), '/v1/status 不应记 usage');
+      for (const p of ['/v1/report', '/v1/watch', '/v1/weekly']) assert.equal((await rep(hub, p)).status, 200, p);
+      assert.deepEqual(usage(hub).filter((u) => u.device === 'daily').map((u) => u.op), ['report:report', 'report:weekly']);
+      const r = (await hub.get('topology')).json.reporters[0];
+      assert.ok(Date.now() - Date.parse(r.last_active) < 10e3);
+      assert.equal(r.last_op, '/v1/weekly');
+    } finally { await hub.stop(); }
+  });
+
+  it('抽取机令牌：最近一次请求落进 extractors，落盘限频，重启后读得回', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'] });
+    try {
+      assert.equal((await hub.device('nightly', '/v1/sessions/pending')).status, 200);
+      const first = hub.read('state/last-request.json').nightly;
+      assert.equal(first.op, '/v1/sessions/pending');
+      await sleep(30);
+      assert.equal((await hub.device('nightly', '/v1/journal/pending')).status, 200);
+      assert.equal(hub.read('state/last-request.json').nightly.t, first.t, '60 秒内不重复落盘');
+      let x = (await hub.get('topology')).json.extractors[0];
+      assert.equal(x.last_op, '/v1/journal/pending');
+      assert.ok(Date.parse(x.last_active) > Date.parse(first.t));
+      await hub.restart();
+      x = (await hub.get('topology')).json.extractors[0];
+      assert.equal(x.last_op, '/v1/journal/pending');
+      assert.ok(Date.now() - Date.parse(x.last_active) < 30e3);
+    } finally { await hub.stop(); }
+  });
+
+  it('设备令牌和普通设备不进 last-request.json', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'] });
+    try {
+      await hub.device('build-server', '/v1/status');
+      assert.ok(!fs.existsSync(hub.path('state/last-request.json')));
+    } finally { await hub.stop(); }
+  });
+
+  it('读写流量：上行 = 新消息 + 写入类调用，下行 = 读取类调用；hours 和上行同口径；智能体、中心合计', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'], config: { embed_url: '' } });
+    try {
+      const now = Date.now();
+      const msgs = (n, agoMs) => Array.from({ length: n }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', text: `m${i}`, ts: new Date(now - agoMs + i * 1000).toISOString() }));
+      const post = (tool, sid, m) => fetch(`${hub.base}/v1/conv/append?client=${tool}`, { method: 'POST', headers: { authorization: `Bearer ${hub.tokenOf['build-server']}`, 'content-type': 'application/json' }, body: JSON.stringify({ tool, session_id: sid, base: 0, messages: m }) });
+      assert.equal((await post('codex', 's1', msgs(4, 30 * 60e3))).status, 200);
+      assert.equal((await post('codex', 's2', msgs(2, 5 * 3600e3))).status, 200);
+      assert.equal((await post('claude-code', 's3', msgs(3, 30 * 3600e3))).status, 200); // 超过 24 小时，不算
+      await hub.device('build-server', '/v1/heartbeat', { agent_version: '0.9.2', wiring: { codex: { mcp: 'on' }, 'claude-code': { mcp: 'on' } } });
+      const call = (name, args) => fetch(`${hub.base}/mcp?client=codex`, { method: 'POST', headers: { authorization: `Bearer ${hub.tokenOf['build-server']}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+      await call('memory_remember', { type: 'fact', title: 'flow fact', body: 'b' });
+      await call('memory_search', { query: 'flow' });
+      await call('memory_search', { query: 'fact' });
+      await call('memory_recent', {});
+      const t = (await hub.get('topology')).json;
+      const d = t.devices.find((x) => x.name === 'build-server');
+      assert.equal(d.flow.up_24h, 6 + 1);
+      assert.equal(d.flow.down_24h, 3);
+      assert.equal(d.flow.hours.length, 24);
+      assert.equal(d.flow.hours.reduce((a, b) => a + b, 0), d.flow.up_24h);
+      assert.ok(d.flow.hours[23] >= 5, '最近一小时有活动');
+      assert.equal(d.flow.hours[18] + d.flow.hours[19], 2, '5 小时前那两条落在对应格（边界上可能差一格）');
+      const codex = d.agents.find((a) => a.tool === 'codex');
+      assert.equal(codex.up_24h, 6 + 1);
+      assert.equal(codex.down_24h, 3);
+      assert.equal(d.agents.find((a) => a.tool === 'claude-code').up_24h, 0);
+      assert.deepEqual(t.devices.find((x) => x.name === 'my-laptop').flow, { up_24h: 0, down_24h: 0, hours: Array(24).fill(0) });
+      assert.equal(t.hub.up_24h, 7);
+      assert.equal(t.hub.down_24h, 3);
+    } finally { await hub.stop(); }
+  });
+
+  it('事件流：种类、文字、顺序、since、limit、id 稳定；不带设备名和密钥', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'], config: { embed_url: '' } });
+    try {
+      const call = (name, args) => fetch(`${hub.base}/mcp?client=codex`, { method: 'POST', headers: { authorization: `Bearer ${hub.tokenOf['build-server']}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+      await hub.device('build-server', '/v1/conv/append', { tool: 'codex', session_id: 'e1', base: 0, messages: [{ role: 'user', text: 'hi', ts: new Date().toISOString() }] });
+      await call('memory_search', { query: '部署 回滚' });
+      await sleep(5);
+      await call('memory_remember', { type: 'decision', title: '用灰度发布', body: 'b' });
+      await sleep(5);
+      await call('memory_search', { query: `长${'很长'.repeat(40)}` });
+      await rep(hub, '/v1/weekly');
+      await hub.device('nightly', '/v1/sessions/result', { key: 'nope' }).catch(() => {});
+      assert.equal((await hub.post('devices/my-laptop', { readonly: false })).status, 200);
+      const r = await hub.get('topology/events');
+      assert.equal(r.status, 200);
+      assert.ok(Date.parse(r.json.now) > 0);
+      const ev = r.json.events;
+      const kinds = new Set(ev.map((e) => e.kind));
+      for (const k of ['read', 'write', 'talk', 'report', 'console']) assert.ok(kinds.has(k), `缺 ${k}`);
+      for (let i = 1; i < ev.length; i++) assert.ok(Date.parse(ev[i].t) >= Date.parse(ev[i - 1].t), '时间升序');
+      assert.equal(new Set(ev.map((e) => e.id)).size, ev.length, 'id 唯一');
+      for (const e of ev) assert.deepEqual(Object.keys(e).sort(), ['device', 'id', 'kind', 't', 'text', 'tool']);
+      assert.ok(ev.some((e) => e.kind === 'read' && e.text === '查了记忆「部署 回滚」' && e.device === 'build-server' && e.tool === 'codex'));
+      assert.ok(ev.some((e) => e.kind === 'write' && e.text === '写了一条记忆「用灰度发布」'));
+      assert.ok(ev.some((e) => e.kind === 'report' && e.text === '拉了周报' && e.device === 'daily'));
+      assert.ok(ev.some((e) => e.kind === 'talk' && e.text === '有新对话' && e.tool === 'codex'));
+      assert.ok(ev.every((e) => e.text.length <= 48), '文字不超长');
+      for (const e of ev) for (const bad of ['build-server', 'my-laptop', GATE, 'tok-', 'sha256', hub.dir]) assert.ok(!e.text.includes(bad), `text 不应含 ${bad}`);
+      // since：只给更新的；同一次请求的 id 不变
+      const again = (await hub.get('topology/events')).json.events;
+      assert.deepEqual(again.map((e) => e.id), ev.map((e) => e.id));
+      const mid = ev[Math.floor(ev.length / 2)];
+      const later = (await hub.get(`topology/events?since=${encodeURIComponent(mid.t)}`)).json.events;
+      assert.ok(later.length && later.every((e) => Date.parse(e.t) > Date.parse(mid.t)));
+      assert.deepEqual((await hub.get(`topology/events?since=${encodeURIComponent(ev[ev.length - 1].t)}`)).json.events, []);
+      // limit：取最新的几条
+      const two = (await hub.get('topology/events?limit=2')).json.events;
+      assert.deepEqual(two.map((e) => e.id), ev.slice(-2).map((e) => e.id));
+      for (const bad of ['limit=0', 'limit=101', 'limit=x', 'since=昨天']) assert.equal((await hub.get(`topology/events?${bad}`)).status, 400, bad);
+      assert.equal((await hub.post('topology/events', {})).status, 405);
+    } finally { await hub.stop(); }
+  });
+
+  it('事件流：查询里带的密钥会打码', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'], config: { embed_url: '' } });
+    try {
+      await fetch(`${hub.base}/mcp?client=codex`, { method: 'POST', headers: { authorization: `Bearer ${hub.tokenOf['build-server']}`, 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'memory_search', arguments: { query: 'password=Abc12345secret' } } }) });
+      const r = await hub.get('topology/events');
+      assert.ok(!r.text.includes('Abc12345secret'));
+    } finally { await hub.stop(); }
   });
 });
 

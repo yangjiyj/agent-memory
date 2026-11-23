@@ -11,7 +11,8 @@
  *   POST join-code/revoke   作废一个加入码
  *   GET  mcp                POST mcp/tool           停用/启用 MCP 工具
  *   GET  jobs               后台工作的最近情况
- *   GET  topology           拓扑页的全部数据（设备、网关、中心、存储、抽取机、向量服务、巡检问题）
+ *   GET  topology           拓扑页的全部数据（设备、网关、中心、存储、抽取机、向量服务、巡检问题，以及近 24 小时读写流量）
+ *   GET  topology/events    拓扑页的事件流：?since=<ISO>&limit=<n，默认 30，最多 100>
  *   GET  settings           POST settings           白名单配置项
  *   GET  conv/search        GET  conv/<ref>         对话存档
  */
@@ -95,6 +96,7 @@ export function createAdmin(ctx) {
   const {
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
     heartbeatFile, agentsOverview, watch, git, tools, store, conv, extras, pipe, deviceSet, newJoinCode, VERSION, agentVersion,
+    redactSecrets, lastRequest, usageTail,
   } = ctx;
   const { listJoinCodes, revokeJoinCode } = ctx;
 
@@ -259,10 +261,44 @@ export function createAdmin(ctx) {
     };
   }
 
+  // usage.jsonl 的近 8 天由 server.mjs 的 usageTail() 增量缓存；每行带 ms（毫秒时间戳）和 at（文件里的字节位置，当事件 id）
+  const usageRows = usageTail;
+
+  // 读取类 / 写入类：tool:memory_remember、cli:remember 这类算写入，其余 tool:*、cli:* 都算读取
+  const isCall = (op) => op.startsWith('tool:') || op.startsWith('cli:');
+  const isWrite = (op) => /^(tool|cli):(memory_)?(remember|update|retire)$/.test(op);
+
   // ---- topology ----
-  // 一次给齐拓扑页要的数据：设备和任务状态直接复用 devices()、jobs()，这里只补中心、网关、令牌角色和浏览者。
+  // 一次给齐拓扑页要的数据：设备和任务状态直接复用 devices()、jobs()，这里只补中心、网关、令牌角色、浏览者和读写流量。
   const LIVE_MS = 20 * 60e3; // 20 分钟内有新对话算"正在干活"
   const hotAgent = (a) => a.sessions || a.memories || a.calls;
+
+  // 近 24 小时每台设备的读写流量。
+  // 上行 up = 写入量 = 对话存档里新增的消息数 + remember/update/retire 的调用次数（两者都是"设备往中心送了东西"）；
+  // 下行 down = 读取类调用次数（search/get/timeline/todos/handoff/entities/conversation_*/kb_* 等）；
+  // hours 是上行同口径按小时分的 24 格（最旧在前，最后一格是最近一小时），所以 sum(hours) === up_24h。
+  function flows(now) {
+    const from = now - DAY;
+    const bucket = (ms) => Math.min(23, Math.max(0, Math.floor((ms - from) / 3600e3)));
+    const out = {};
+    const of = (dev) => (out[dev] ||= { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), agents: {} });
+    const ag = (f, tool) => (f.agents[tool] ||= { up_24h: 0, down_24h: 0 });
+    for (const [dev, tools] of Object.entries(conv().recentMessages(from))) {
+      const f = of(dev);
+      for (const [tool, xs] of Object.entries(tools)) {
+        for (const ms of xs) { if (ms > now) continue; f.up_24h++; f.hours[bucket(ms)]++; ag(f, tool).up_24h++; }
+      }
+    }
+    const rows = usageRows();
+    for (let i = rows.length - 1; i >= 0; i--) { // 行按时间追加，从尾往前读，出了 24 小时就停
+      const u = rows[i];
+      if (u.ms < from) break;
+      if (u.ms > now || !isCall(u.op)) continue;
+      const f = of(u.device);
+      if (isWrite(u.op)) { f.up_24h++; f.hours[bucket(u.ms)]++; ag(f, u.client).up_24h++; } else { f.down_24h++; ag(f, u.client).down_24h++; }
+    }
+    return out;
+  }
 
   async function topology(viewer, req) {
     const dv = devices();
@@ -270,38 +306,50 @@ export function createAdmin(ctx) {
     const stale = Object.fromEntries(jb.sync.devices.map((d) => [d.name, d.stale]));
     const hb = readJSON(heartbeatFile(), {});
     const now = Date.now();
+    const fl = flows(now);
+    const hubFlow = { up_24h: 0, down_24h: 0 };
 
     const list = dv.devices.filter((d) => d.role === 'device').map((d) => {
+      const f = fl[d.name] || { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), agents: {} };
+      hubFlow.up_24h += f.up_24h; hubFlow.down_24h += f.down_24h;
       const agents = Object.keys({ ...d.wiring, ...d.agents }).filter((k) => {
         if (k === 'cli' || k === 'test') return false;
         const a = d.agents[k];
         return d.wiring[k] || (a && hotAgent(a));
       }).map((k) => {
         const last = d.agents[k]?.lastMsg || null;
-        return { tool: k, last_msg: last, live: Boolean(last) && now - Date.parse(last) < LIVE_MS };
+        return { tool: k, last_msg: last, live: Boolean(last) && now - Date.parse(last) < LIVE_MS, up_24h: f.agents[k]?.up_24h || 0, down_24h: f.agents[k]?.down_24h || 0 };
       });
       const lastMsg = agents.map((a) => a.last_msg).filter(Boolean).sort().pop() || null;
       return {
         name: d.name, label: d.label, identity: d.identity, version: d.version, last_seen: d.last_seen,
         stale: Boolean(stale[d.name]), paused: d.policy.paused, readonly: d.policy.readonly,
         live: agents.some((a) => a.live), last_msg: lastMsg, agents,
+        flow: { up_24h: f.up_24h, down_24h: f.down_24h, hours: f.hours },
       };
     });
 
-    // 调用次数和各令牌最近一次调用：一遍扫完 usage
+    // 调用次数和各令牌最近一次调用
     const since7 = now - 7 * DAY;
     let calls7 = 0;
     const lastCall = {};
-    for (const u of readJsonl(usageFile(), 0)) {
-      if (u.op.startsWith('tool:') || u.op.startsWith('cli:')) {
-        if (Date.parse(u.t) >= since7) calls7++;
+    for (const u of usageRows()) {
+      if (isCall(u.op)) {
+        if (u.ms >= since7) calls7++;
         if (!lastCall[u.device] || u.t > lastCall[u.device]) lastCall[u.device] = u.t;
       }
     }
-    // 抽取机和报表的令牌不发心跳：没有心跳时，抽取机看最近一次抽取/写日志，报表看最近一次调用
+    // 抽取机和报表的令牌不发心跳：最近活动取"令牌最近一次请求、心跳、回退值"里最新的；
+    // 回退值：抽取机看最近一次抽取/写日志，报表看最近一次工具调用
     const extractorLast = [jb.extract.last_processed, jb.journal.last_result].filter(Boolean).sort().pop() || null;
-    const byRole = (role, fallback) => Object.entries(loadTokens().devices || {}).filter(([, d]) => d.role === role)
-      .map(([name]) => ({ name, label: (CFG.device_labels || {})[name] || '', last_active: hb[name]?.last_seen || fallback(name) }));
+    const byRole = (role, fallback) => Object.entries(loadTokens().devices || {}).filter(([, d]) => d.role === role).map(([name]) => {
+      const last = lastRequest(name);
+      return {
+        name, label: (CFG.device_labels || {})[name] || '',
+        last_active: [last?.t, hb[name]?.last_seen, fallback(name)].filter(Boolean).sort().pop() || null,
+        last_op: last?.op || null,
+      };
+    });
 
     const secret = Boolean(CFG.gate_secret);
     return {
@@ -309,6 +357,7 @@ export function createAdmin(ctx) {
       hub: {
         version: VERSION, agent_version: agentVersion(), public_url: CFG.public_url || '', calls_7d: calls7,
         memories: [...store.values()].filter((e) => e.meta.state === 'active').length,
+        up_24h: hubFlow.up_24h, down_24h: hubFlow.down_24h,
       },
       gate: { enabled: secret, devices: secret ? list.filter((d) => d.identity === 'gateway').length : 0 },
       devices: list,
@@ -320,6 +369,69 @@ export function createAdmin(ctx) {
       problems: jb.watch.problems,
       viewer: { device: viewer, via: secret && req.headers['x-am-gate'] === CFG.gate_secret ? 'gateway' : 'config' },
     };
+  }
+
+  // ---- topology/events ----
+  // 事件流：usage.jsonl 的尾部（读写、报表、抽取、控制台操作）加上对话存档里最近有新消息的会话。
+  // 控制台现有接口都不按浏览者的 hide_projects 过滤（浏览者本来就是你自己的机器），这里保持一致。
+  const short = (v, n = 40) => { const t = String(v || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+  const READ_TEXT = {
+    search: '查了记忆', get: '读了一条记忆', timeline: '看了时间线', todos: '看了待办', handoff: '生成了交接包', entities: '查了实体',
+    recent: '看了最近的记忆', digest: '取了记忆摘要', conversation_search: '搜了对话', conversation_get: '读了一段对话',
+  };
+  const WRITE_TEXT = { remember: '写了一条记忆', update: '更新了一条记忆', retire: '作废了一条记忆' };
+  const CONSOLE_TEXT = {
+    'console:settings': '改了设置', 'console:device-set': '改了设备策略', 'console:join-code': '生成了加入码', 'console:mcp-tool': '开关了 MCP 工具',
+    'manage:approve': '通过了候选记忆', 'manage:reject': '驳回了候选记忆', 'manage:retire': '作废了记忆', 'manage:merge': '合并了记忆',
+  };
+  const REPORT_TEXT = { report: '拉了日报', weekly: '拉了周报' };
+  const EXTRACT_TEXT = { session: '抽取了一个会话', journal: '写了一段工作日志' };
+  const withD = (base, d, quote) => { const t = short(redactSecrets(d || '')); return t && quote ? `${base}「${t}」` : base; };
+
+  function eventOf(u) {
+    const id = `u${u.at}`;
+    const mk = (kind, text, tool) => ({ id, t: new Date(u.ms).toISOString(), kind, device: u.device, tool: tool || null, text });
+    if (isCall(u.op)) {
+      const name = u.op.replace(/^(tool|cli):/, '').replace(/^memory_/, '');
+      if (isWrite(u.op)) return mk('write', withD(WRITE_TEXT[name], u.d, name === 'remember'), u.client);
+      const quote = ['search', 'conversation_search', 'entities'].includes(name);
+      return mk('read', withD(READ_TEXT[name] || (name.startsWith('kb_') ? '查了知识卡片' : '读了记忆'), u.d, quote), u.client);
+    }
+    if (u.op.startsWith('report:')) return mk('report', REPORT_TEXT[u.op.slice(7)] || '拉了报表');
+    if (u.op.startsWith('extract:')) return mk('extract', EXTRACT_TEXT[u.op.slice(8)] || '处理了数据');
+    if (u.op.startsWith('console:') || u.op.startsWith('manage:')) return mk('console', CONSOLE_TEXT[u.op] || '在控制台做了管理操作');
+    return null;
+  }
+
+  function events(q) {
+    let since = null;
+    if (q.get('since')) {
+      since = Date.parse(q.get('since'));
+      if (!Number.isFinite(since)) throw bad('since 不是合法的时间（用 ISO 格式，如 2026-11-23T08:00:00Z）');
+    }
+    let limit = 30;
+    if (q.get('limit') !== null) {
+      limit = Number(q.get('limit'));
+      if (!isInt(limit) || limit < 1 || limit > 100) throw bad('limit 必须是 1–100 之间的整数');
+    }
+    const now = Date.now();
+    const floor = Math.max(since ?? 0, now - DAY); // 最多回看 24 小时
+    const out = [];
+    // 从文件尾往前读，够 limit 条就停（合并后的最新 limit 条一定在两个来源各自的最新 limit 条里）；行在文件里按时间追加
+    const rows = usageRows();
+    for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {
+      const u = rows[i];
+      if (u.ms > now + 60e3) continue;
+      if (u.ms <= floor) break;
+      const e = eventOf(u);
+      if (e) out.push(e);
+    }
+    // 对话：一个会话一条，时间取它最近一条消息；同一会话之后又有新消息会换一个 id（带着时间）
+    for (const s of conv().recentSessions(floor)) {
+      out.push({ id: `c${s.ref}:${Date.parse(s.last)}`, t: s.last, kind: 'talk', device: s.device, tool: s.tool, text: s.project ? `在 ${short(s.project)} 有新对话` : '有新对话' });
+    }
+    out.sort((a, b) => Date.parse(a.t) - Date.parse(b.t) || (a.id < b.id ? -1 : 1));
+    return { now: nowIso(), events: out.slice(-limit) };
   }
 
   // ---- settings ----
@@ -412,6 +524,7 @@ export function createAdmin(ctx) {
       if (sub === 'mcp/tool') { only('POST'); return send(res, 200, setTool(await readBody(req), viewer)); }
       if (sub === 'jobs') { only('GET'); return send(res, 200, await jobs()); }
       if (sub === 'topology') { only('GET'); return send(res, 200, await topology(viewer, req)); }
+      if (sub === 'topology/events') { only('GET'); return send(res, 200, events(q)); }
       if (sub === 'settings') {
         if (method === 'GET') return send(res, 200, settingsView());
         only('POST');

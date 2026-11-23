@@ -24,6 +24,7 @@
  *   Console.go(route, query?)          跳转：'lib'、'lib/abc'、'#/timeline/2026-11-01'、go('lib', { q: '部署' })
  *   Console.badge(id, n)               设置侧栏徽标；n 为 0/空 就隐藏
  *   Console.toast(msg, kind)           右下角提示；kind: 'ok' | 'err' | 缺省为普通
+ *   Console.overlayHost(el)            悬停浮层和右下角提示默认挂在 body；元素进入全屏后只有它里面的东西看得见，这时把它们搬进去（传 null 搬回 body）
  *   Console.every(id, ms, fn)          页面 id 可见（且浏览器标签页没被切走）时每 ms 毫秒调用一次 fn；离开页面自动停，回来自动恢复。可在 mount 里注册一次。
  *   Console.loadData(force?)           共享的 /browse/viz-data（60 秒内复用）；返回 Promise<DATA>。Console.data() 同步取最近一次的值
  *   Console.ready                      Promise：外壳启动完、DATA 和设备显示名已加载（失败也会 resolve），页面脚本想在启动时干点事可以 .then
@@ -148,9 +149,10 @@
   };
 
   // 右下角提示
-  let toastBox = null;
+  let toastBox = null; let overlayEl = document.body;
+  Console.overlayHost = (host) => { overlayEl = host || document.body; overlayEl.appendChild(tipEl); if (toastBox) overlayEl.appendChild(toastBox); };
   Console.toast = (msg, kind) => {
-    if (!toastBox) { toastBox = document.createElement('div'); toastBox.className = 'toasts'; document.body.appendChild(toastBox); }
+    if (!toastBox) { toastBox = document.createElement('div'); toastBox.className = 'toasts'; overlayEl.appendChild(toastBox); }
     const n = document.createElement('div');
     n.className = `toast ${kind || ''}`; n.textContent = msg;
     toastBox.appendChild(n);
