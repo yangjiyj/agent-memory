@@ -26,6 +26,7 @@ import fs from 'node:fs';
 // [D] import 位
 //
 // [E] import 位
+import { createSearch } from './admin-search.mjs';
 //
 // [F] import 位
 
@@ -100,6 +101,36 @@ const SETTINGS = {
       return out;
     },
   },
+  // 问我的记忆（OpenAI 兼容的对话接口）：地址可以是接口根（…/v1）也可以是完整的 …/chat/completions；空串等于清除
+  ask_url: {
+    allowNull: true,
+    check: (v) => {
+      if (typeof v !== 'string') throw bad('ask_url 必须是字符串');
+      if (!v.trim()) return undefined;
+      const u = httpUrl(v.trim(), 'ask_url');
+      const parsed = new URL(u);
+      if (parsed.username || parsed.password) throw bad('ask_url 里不要带账号密码，密钥填在 ask_key');
+      return u;
+    },
+  },
+  ask_model: {
+    allowNull: true,
+    check: (v) => {
+      if (typeof v !== 'string') throw bad('ask_model 必须是字符串');
+      if (v.trim().length > 80) throw bad('ask_model 最长 80 个字');
+      return v.trim() || undefined;
+    },
+  },
+  // secret：只写不读。GET /settings 里不给值，只给 ask_key_set；错误信息、审计里也不回显
+  ask_key: {
+    allowNull: true,
+    secret: true,
+    check: (v) => {
+      if (typeof v !== 'string' || !v.trim()) throw bad('ask_key 必须是非空字符串（要清除请传 null）');
+      if (v.trim().length > 300) throw bad('ask_key 最长 300 个字符');
+      return v.trim();
+    },
+  },
 };
 
 export function createAdmin(ctx) {
@@ -130,7 +161,10 @@ export function createAdmin(ctx) {
     const tmp = `${CONFIG_PATH}.tmp-${process.pid}`;
     try {
       fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode });
-      if (existed) fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.bak`);
+      if (existed) {
+        fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.bak`);
+        fs.chmodSync(`${CONFIG_PATH}.bak`, mode); // .bak 是上一版配置，里面有明文密钥：权限必须和配置文件一致（.bak 已存在时 copyFile 不一定改权限）
+      }
       fs.renameSync(tmp, CONFIG_PATH);
     } catch (e) {
       fs.rmSync(tmp, { force: true });
@@ -456,8 +490,12 @@ export function createAdmin(ctx) {
   }
 
   // ---- settings ----
+  // secret 的键（ask_key）永远不返回值，只给 <键>_set 表示有没有设置
   const settingsView = () => ({
-    settings: Object.fromEntries(Object.keys(SETTINGS).map((k) => [k, CFG[k] === undefined ? null : CFG[k]])),
+    settings: {
+      ...Object.fromEntries(Object.keys(SETTINGS).filter((k) => !SETTINGS[k].secret).map((k) => [k, CFG[k] === undefined ? null : CFG[k]])),
+      ...Object.fromEntries(Object.keys(SETTINGS).filter((k) => SETTINGS[k].secret).map((k) => [`${k}_set`, Boolean(CFG[k])])),
+    },
     defaults: DEFAULTS,
   });
 
@@ -539,6 +577,7 @@ export function createAdmin(ctx) {
     // [D] 扩展位
     //
     // [E] 扩展位
+    createSearch(ctx, kit),
     //
     // [F] 扩展位
   ];

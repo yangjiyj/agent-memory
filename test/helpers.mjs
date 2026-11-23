@@ -65,6 +65,7 @@ export async function startHub(opts = {}) {
   await launch();
   const hub = {
     dir, base, port, tokenOf, path: p,
+    getLog: () => log, // 中心进程到目前为止的 stdout + stderr（测试"某个字符串不出现在日志里"用）
     // 浏览器身份（网关认出的）调用控制台接口
     async api(method, route, body, headers = GATE_HEADERS) {
       const res = await fetch(`${base}/console/api/${route}`, {

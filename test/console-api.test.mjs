@@ -653,7 +653,7 @@ describe('控制台接口：设置', () => {
   });
   after(() => hub.stop());
 
-  const KEYS = ['public_url', 'embed_url', 'stale_hours', 'auto_approve_days', 'digest_budget', 'auto_register_deny', 'device_labels', 'graph_entities'];
+  const KEYS = ['public_url', 'embed_url', 'stale_hours', 'auto_approve_days', 'digest_budget', 'auto_register_deny', 'device_labels', 'graph_entities', 'ask_url', 'ask_model', 'ask_key_set']; // ask_key 只给 ask_key_set，见 e-search-api.test.mjs
 
   it('只返回白名单键，不含 gate_secret、令牌和路径', async () => {
     const r = await hub.get('settings');

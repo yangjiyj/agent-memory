@@ -1797,6 +1797,7 @@ async function main() {
     // [D] 参数位
     //
     // [E] 参数位
+    searchMemory: search, byUpdated,
     //
     // [F] 参数位
   });

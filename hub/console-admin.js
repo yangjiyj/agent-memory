@@ -431,14 +431,16 @@
   // 设置
   // ======================================================================
   (function settings() {
-    const KEYS = ['public_url', 'embed_url', 'stale_hours', 'auto_approve_days', 'digest_budget', 'auto_register_deny', 'device_labels', 'graph_entities'];
+    const KEYS = ['public_url', 'embed_url', 'stale_hours', 'auto_approve_days', 'digest_budget', 'auto_register_deny', 'device_labels', 'graph_entities', 'ask_url', 'ask_model', 'ask_key'];
+    let askSet = false; let askClear = false; // ask_key 只写不读：服务端只说"有没有设置"；askClear = 点了"清除"
     let root = null; let orig = null; let defaults = {}; let inputs = {}; let saving = false; let serverErr = '';
 
     const sortObj = (o) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
     const numOrNull = (v) => (v === null || v === undefined || String(v).trim() === '' ? null : Number(v));
     function norm(key, v) {
       switch (key) {
-        case 'public_url': case 'embed_url': return String(v ?? '').trim().replace(/\/+$/, '');
+        case 'public_url': case 'embed_url': case 'ask_url': return String(v ?? '').trim().replace(/\/+$/, '');
+        case 'ask_model': case 'ask_key': return String(v ?? '').trim();
         case 'stale_hours': case 'auto_approve_days': return numOrNull(v);
         case 'digest_budget': return numOrNull(v) ?? defaults.digest_budget;
         case 'auto_register_deny': return (v || []).map((s) => String(s).trim()).filter(Boolean);
@@ -481,6 +483,7 @@
       });
       return {
         public_url: norm('public_url', inputs.public_url.value), embed_url: norm('embed_url', inputs.embed_url.value),
+        ask_url: norm('ask_url', inputs.ask_url.value), ask_model: norm('ask_model', inputs.ask_model.value), ask_key: askClear ? null : norm('ask_key', inputs.ask_key.value),
         stale_hours: norm('stale_hours', inputs.stale_hours.value), auto_approve_days: norm('auto_approve_days', inputs.auto_approve_days.value), digest_budget: norm('digest_budget', inputs.digest_budget.value),
         auto_register_deny: norm('auto_register_deny', inputs.auto_register_deny.value.split('\n')),
         device_labels: norm('device_labels', lab),
@@ -516,6 +519,17 @@
       const kv = root.querySelector('.adm-kv .rows');
       kv.innerHTML = Object.entries(v.device_labels || {}).map(([k, x]) => labelRow(k, x)).join('');
       inputs.machine.set(v.graph_entities?.machine || []); inputs.site.set(v.graph_entities?.site || []);
+      inputs.ask_url.value = v.ask_url || ''; inputs.ask_model.value = v.ask_model || ''; inputs.ask_key.value = '';
+      askSet = Boolean(v.ask_key_set); askClear = false; syncAsk();
+    }
+
+    // 密钥框：设置过就提示"已设置，留空不改"，旁边的按钮可以清除；点了清除后输入框锁住，保存时发 null
+    function syncAsk() {
+      const b = root.querySelector('[data-askclear]');
+      b.hidden = !askSet; b.textContent = askClear ? '撤销清除' : '清除';
+      inputs.ask_key.disabled = askClear;
+      inputs.ask_key.placeholder = askClear ? '保存后清除' : (askSet ? '已设置，留空不改' : '');
+      if (askClear) inputs.ask_key.value = '';
       refresh();
     }
 
@@ -544,7 +558,7 @@
       } catch (e) { serverErr = e.message; refresh(false); } finally { saving = false; btn.disabled = false; }
     }
 
-    const field = (key, label, control, note) => `<div class="adm-f" data-k="${key}"><${key === 'device_labels' || key === 'graph_entities' ? 'div class="lb"' : 'label'}${/^(public_url|embed_url|stale_hours|auto_approve_days|digest_budget|auto_register_deny)$/.test(key) ? ` for="adm-set-${key}"` : ''}>${label}</${key === 'device_labels' || key === 'graph_entities' ? 'div' : 'label'}><div>${control}</div>${note ? `<div class="note">${note}</div>` : ''}</div>`;
+    const field = (key, label, control, note) => `<div class="adm-f" data-k="${key}"><${key === 'device_labels' || key === 'graph_entities' ? 'div class="lb"' : 'label'}${/^(public_url|embed_url|stale_hours|auto_approve_days|digest_budget|auto_register_deny|ask_url|ask_model|ask_key)$/.test(key) ? ` for="adm-set-${key}"` : ''}>${label}</${key === 'device_labels' || key === 'graph_entities' ? 'div' : 'label'}><div>${control}</div>${note ? `<div class="note">${note}</div>` : ''}</div>`;
     const numIn = (k, unit, defKey, ph) => `<div class="adm-field-row"><input class="inp n" id="adm-set-${k}" type="number" min="0" step="1" placeholder="${h(ph || '')}">${unit ? `<span class="adm-def">${unit}</span>` : ''}${defKey ? `<span class="adm-def">· 默认 <span class="adm-set-def" data-def="${defKey}"></span></span>` : ''}</div>`;
 
     Console.page('settings', {
@@ -560,16 +574,21 @@
             ${field('digest_budget', '摘要大小', numIn('digest_budget', '字节', 'digest_budget'))}</section>
           <section class="panel"><div class="ph"><h2>接入</h2></div>
             ${field('auto_register_deny', '不自动接入的设备名', '<textarea class="inp" id="adm-set-auto_register_deny" rows="5" spellcheck="false" placeholder="每行一个正则，不分大小写"></textarea>', '正则写错整个保存会被拒')}</section>
+          <section class="panel"><div class="ph"><h2>问答</h2></div>
+            ${field('ask_url', '模型接口地址', '<input class="inp w" id="adm-set-ask_url" type="url" placeholder="https://gw.example/v1">', 'OpenAI 兼容的对话接口：写接口根（…/v1）或完整的 …/chat/completions 都行')}
+            ${field('ask_model', '模型名', '<input class="inp w" id="adm-set-ask_model" type="text" maxlength="80" spellcheck="false">')}
+            ${field('ask_key', '密钥', '<div class="adm-field-row"><input class="inp w" id="adm-set-ask_key" type="password" maxlength="300" autocomplete="new-password" spellcheck="false"><button class="btn" type="button" data-askclear hidden>清除</button></div>')}</section>
           <section class="panel"><div class="ph"><h2>显示与图谱</h2></div>
             ${field('device_labels', '设备显示名', '<div class="adm-kv"><div class="rows" style="display:grid;gap:6px"></div><button class="btn add" type="button" data-add>添加一项</button></div><datalist id="adm-set-devs"></datalist>')}
             ${field('graph_entities', '图谱里要认的名字', '<div class="adm-tagrow"><span>机器</span><div class="adm-tags" data-t="machine"></div></div><div class="adm-tagrow"><span>现场</span><div class="adm-tags" data-t="site"></div></div>')}</section>
           <div class="adm-save" hidden><span class="msg"></span><button class="btn" type="button" data-act="revert">还原</button><button class="btn go" type="button" data-act="save">保存</button></div></div>`;
-        for (const k of ['public_url', 'embed_url', 'stale_hours', 'auto_approve_days', 'digest_budget', 'auto_register_deny']) inputs[k] = el.querySelector(`#adm-set-${k}`);
+        for (const k of ['public_url', 'embed_url', 'stale_hours', 'auto_approve_days', 'digest_budget', 'auto_register_deny', 'ask_url', 'ask_model', 'ask_key']) inputs[k] = el.querySelector(`#adm-set-${k}`);
         inputs.machine = tagInput(el.querySelector('[data-t=machine]'), '输入后回车', () => refresh());
         inputs.site = tagInput(el.querySelector('[data-t=site]'), '输入后回车', () => refresh());
         const kv = el.querySelector('.adm-kv .rows');
         el.addEventListener('input', () => refresh());
         el.addEventListener('click', (e) => {
+          if (e.target.closest('[data-askclear]')) { askClear = !askClear; syncAsk(); }
           if (e.target.closest('[data-add]')) { kv.insertAdjacentHTML('beforeend', labelRow()); kv.lastElementChild.querySelector('input').focus(); refresh(); }
           const del = e.target.closest('[data-del]'); if (del) { del.closest('.r').remove(); refresh(); }
           const a = e.target.closest('[data-act]');
