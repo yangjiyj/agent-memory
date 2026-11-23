@@ -1787,6 +1787,16 @@ async function main() {
     lastRequest: (name) => lastReq.get(name) || null,
     tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
     listJoinCodes, revokeJoinCode,
+    // 各功能需要的 server 内部函数在自己的占位行上加；占位行之间隔着空行，合并时互不冲突
+    // [B] 参数位
+    //
+    // [C] 参数位
+    //
+    // [D] 参数位
+    //
+    // [E] 参数位
+    //
+    // [F] 参数位
   });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
   setTimeout(vecTick, 30e3);

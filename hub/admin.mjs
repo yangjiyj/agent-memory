@@ -18,6 +18,16 @@
  */
 
 import fs from 'node:fs';
+// 各功能的接口放在自己的 admin-<名字>.mjs 里，在这里 import；每组只改自己那一行（占位行之间隔着空行，合并时互不冲突）
+// [B] import 位
+//
+// [C] import 位
+//
+// [D] import 位
+//
+// [E] import 位
+//
+// [F] import 位
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -516,6 +526,22 @@ export function createAdmin(ctx) {
     return r;
   }
 
+  // ---- 扩展接口 ----
+  // 每个 admin-<名字>.mjs 导出 createXxx(ctx, kit)，返回 { handle(req, res, url, sub, viewer) }：认领了这个请求就返回 true，否则返回 undefined。
+  // kit 里是核心的小工具；出错抛 kit.HttpError / kit.bad，由下面的 handle 统一变成 4xx 和中文 error。
+  const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY };
+  const exts = [
+    // [B] 扩展位
+    //
+    // [C] 扩展位
+    //
+    // [D] 扩展位
+    //
+    // [E] 扩展位
+    //
+    // [F] 扩展位
+  ];
+
   // ---- 路由 ----
   async function handle(req, res, url) {
     try {
@@ -543,6 +569,7 @@ export function createAdmin(ctx) {
       }
       if (sub === 'conv/search') { only('GET'); return send(res, 200, convSearch(q)); }
       if ((m = /^conv\/([A-Za-z0-9._:-]{1,200})$/.exec(sub))) { only('GET'); return send(res, 200, convGet(m[1], q)); }
+      for (const ext of exts) { if (await ext.handle(req, res, url, sub, viewer)) return; }
       throw new HttpError(404, '没有这个接口');
     } catch (e) {
       if (e instanceof HttpError) return send(res, e.status, { error: e.message });
