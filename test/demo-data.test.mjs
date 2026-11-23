@@ -79,6 +79,25 @@ describe('演示数据', () => {
     assert.ok(j.sync.stale_count >= 1 && j.extract.total > 0);
   });
 
+  it('用量洞察：MCP 页的耗时和失败率、记忆缺口、冷记忆都有内容，冷记忆写明起算日期', async () => {
+    const mcp = await get('/console/api/mcp');
+    assert.ok(mcp.tools.filter((t) => t.p95_ms > 0).length >= 6);
+    assert.ok(mcp.tools.some((t) => t.p95_ms >= 3000), '有个别工具耗时偏高');
+    assert.ok(mcp.tools.some((t) => t.err_rate >= 0.05), '有个别工具失败率偏高');
+    assert.ok(mcp.tools.some((t) => t.calls_7d > 0 && t.err_rate === 0), '多数工具几乎不失败');
+    const gaps = await get('/console/api/insight/gaps');
+    assert.ok(gaps.groups.length >= 4);
+    const cert = gaps.groups.find((g) => g.text.includes('证书'));
+    assert.ok(cert && cert.count >= 5 && cert.variants.length >= 3 && cert.device_count >= 2, '证书续期的几种写法归成一组、多台设备搜过');
+    const cold = await get('/console/api/insight/cold');
+    assert.equal(cold.accumulating, false);
+    assert.ok(cold.since && cold.observed_days >= 30);
+    assert.ok(cold.total >= 20 && cold.groups.length >= 3);
+    const items = cold.groups.flatMap((g) => g.items);
+    assert.ok(items.some((i) => i.last_read === null) && items.some((i) => i.last_read), '既有从没读到过的，也有只在一个多月前读过的');
+    assert.ok(JSON.parse(fs.readFileSync(path.join(dir, 'state', 'usage-meta.json'), 'utf8')).since);
+  });
+
   it('拓扑页的流量、心跳条、事件带都有内容', async () => {
     const t = await get('/console/api/topology');
     const devs = t.devices;

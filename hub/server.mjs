@@ -407,8 +407,29 @@ const usageFile = () => path.join(CFG.state, 'usage.jsonl');
 const rejectFile = () => path.join(CFG.state, 'rejections.jsonl');
 const heartbeatFile = () => path.join(CFG.state, 'heartbeats.json');
 
-function logUsage(who, op, detail) {
-  appendJsonl(usageFile(), { t: nowIso(), device: who.device, client: who.client, op, ...(detail ? { d: String(detail).replace(/\s+/g, ' ').slice(0, 120) } : {}) });
+// extra 是可选的新字段，缺省就不写，旧行和旧读取方都不受影响：
+//   hits 搜索命中条数（0 = 搜了但没搜到）、ids 命中/读到的记忆 id（最多 12 个）、p 限定的项目、dur 耗时毫秒、err 出错标记（1）。
+// 耗时叫 dur 而不叫 ms：usageTail() 给每一行挂了不可枚举的 ms（时间戳毫秒），同名会被它盖掉。
+// 第一次写带 dur 的行时，把"从哪一刻起有这些字段"落到 state/usage-meta.json（冷记忆要写明起算日期，不能冒充成从没用过）。
+const usageMetaFile = () => path.join(CFG.state, 'usage-meta.json');
+let usageMetaChecked = false;
+function noteUsageMeta(since) {
+  if (usageMetaChecked) return;
+  usageMetaChecked = true;
+  try {
+    fs.mkdirSync(CFG.state, { recursive: true });
+    fs.writeFileSync(usageMetaFile(), `${JSON.stringify({ since, fields: ['hits', 'ids', 'p', 'dur', 'err'] })}\n`, { flag: 'wx' });
+  } catch { /* 已经有了；写不了也不影响记调用 */ }
+}
+function logUsage(who, op, detail, extra) {
+  const row = { t: nowIso(), device: who.device, client: who.client, op, ...(detail ? { d: String(detail).replace(/\s+/g, ' ').slice(0, 120) } : {}) };
+  const x = extra || {};
+  if (Number.isInteger(x.hits) && x.hits >= 0) row.hits = x.hits;
+  if (Array.isArray(x.ids) && x.ids.length) row.ids = x.ids.slice(0, 12).map(String);
+  if (typeof x.p === 'string' && x.p.trim()) row.p = x.p.trim().slice(0, 60);
+  if (Number.isFinite(x.dur)) { row.dur = Math.max(0, Math.round(x.dur)); noteUsageMeta(row.t); }
+  if (x.err) row.err = 1;
+  appendJsonl(usageFile(), row);
 }
 
 // 权限：tokens.json 里每台机器可以设 readonly（不能写记忆）、hide_projects（这些项目的记忆和日志对它不可见）
@@ -1351,8 +1372,24 @@ function text(t, isError = false) {
   return { content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) };
 }
 
+// 统一在这里计时、判错、记一行：工具返回 isError 或抛异常算 err；搜索类工具由 runTool 在 stat 里填 hits / ids / p。
 async function callTool(name, args, who) {
-  logUsage(who, `tool:${name}`, args.query || args.id || args.ref || args.title || args.name || args.project || args.date || '');
+  const t0 = performance.now();
+  const stat = {};
+  let res = null;
+  try {
+    res = await runTool(name, args, who, stat);
+    return res;
+  } finally {
+    try {
+      logUsage(who, `tool:${name}`, args.query || args.id || args.ref || args.title || args.name || args.project || args.date || '', {
+        hits: stat.hits, ids: stat.ids, p: stat.p, dur: performance.now() - t0, err: !res || res.isError || stat.err,
+      });
+    } catch (e) { console.error('记调用失败：', e.message); }
+  }
+}
+
+async function runTool(name, args, who, stat) {
   if (toolDisabled(name)) return text(`工具 ${name} 已被管理员停用。`, true);
   if (['memory_remember', 'memory_update', 'memory_retire'].includes(name) && devicePolicy(who.device).readonly) return text('这台机器在共享记忆里设成了只读，不能写。', true);
   try {
@@ -1360,6 +1397,9 @@ async function callTool(name, args, who) {
       case 'memory_search': {
         const r = search(args);
         r.items = r.items.filter(({ e }) => visible(who, e.meta.project));
+        stat.hits = r.items.length; // 只算关键词命中；按意思补的几条永远有（取最近的 5 条），不算命中
+        stat.ids = r.items.map(({ e }) => e.meta.id);
+        if (typeof args.project === 'string') stat.p = args.project;
         let out = renderSearch(r, args.query || '');
         // 关键词之外再按意思找几条（本地向量服务 embed_url），去掉已经列过的
         if (extras && args.query) {
@@ -1398,11 +1438,13 @@ async function callTool(name, args, who) {
       }
       case 'memory_digest':
         return text(digest(who));
-      case 'memory_timeline': return text(conv.timeline(args));
-      case 'conversation_search': return text(conv.search(args));
+      case 'memory_timeline':
+        if (typeof args.project === 'string') stat.p = args.project;
+        return text(conv.timeline(args, stat));
+      case 'conversation_search': return text(conv.search(args, stat));
       case 'conversation_get': return text(conv.get(args));
       case 'kb_map': return text(cards.map());
-      case 'kb_search': return text(cards.search(args));
+      case 'kb_search': return text(cards.search(args, stat));
       case 'kb_sections': return text(cards.sections(args));
       case 'kb_read': return text(cards.read(args));
       default:
@@ -1714,7 +1756,13 @@ async function route(req, res, url) {
     case 'GET /v1/todos': logUsage(who, 'cli:todos', q.project); return send(res, 200, extras.renderTodos(extras.todos(q)), 'text/plain; charset=utf-8');
     case 'GET /v1/entity': logUsage(who, 'cli:entities', q.name); return send(res, 200, extras.entity(q.name), 'text/plain; charset=utf-8');
     case 'GET /v1/timeline': logUsage(who, 'cli:timeline'); return send(res, 200, conv.timeline(q), 'text/plain; charset=utf-8');
-    case 'GET /v1/conv/search': logUsage(who, 'cli:conversation_search'); return send(res, 200, conv.search({ ...q, query: q.q || q.query }), 'text/plain; charset=utf-8');
+    case 'GET /v1/conv/search': {
+      const t0 = performance.now();
+      const st = {};
+      const out = conv.search({ ...q, query: q.q || q.query }, st);
+      logUsage(who, 'cli:conversation_search', q.q || q.query, { hits: st.hits, dur: performance.now() - t0, err: st.err });
+      return send(res, 200, out, 'text/plain; charset=utf-8');
+    }
     case 'GET /v1/conv/get': logUsage(who, 'cli:conversation_get'); return send(res, 200, conv.get(q), 'text/plain; charset=utf-8');
     case 'GET /v1/vault': {
       const v = pipe.vault();
@@ -1739,8 +1787,11 @@ async function route(req, res, url) {
     case 'GET /v1/status': return send(res, 200, status());
     case 'GET /v1/report': logUsage(who, 'report:report'); return send(res, 200, report(parseInt(q.hours, 10) || 24), 'text/plain; charset=utf-8');
     case 'GET /v1/search': {
-      logUsage(who, 'cli:search');
-      return send(res, 200, renderSearch(search({ ...q, query: q.q || q.query }), q.q || q.query || ''), 'text/plain; charset=utf-8');
+      const t0 = performance.now();
+      const qq = q.q || q.query || '';
+      const r = search({ ...q, query: qq });
+      logUsage(who, 'cli:search', qq, { hits: r.items.length, ids: r.items.map(({ e }) => e.meta.id), dur: performance.now() - t0 });
+      return send(res, 200, renderSearch(r, qq), 'text/plain; charset=utf-8');
     }
     case 'POST /v1/remember': {
       logUsage(who, 'cli:remember');
@@ -1750,8 +1801,10 @@ async function route(req, res, url) {
     }
     default:
       if (req.method === 'GET' && p.startsWith('/v1/entries/')) {
-        logUsage(who, 'cli:get');
-        const e = store.get(decodeURIComponent(p.slice('/v1/entries/'.length)));
+        const t0 = performance.now();
+        const eid = decodeURIComponent(p.slice('/v1/entries/'.length));
+        const e = store.get(eid);
+        logUsage(who, 'cli:get', eid, { dur: performance.now() - t0, err: !e });
         return e ? send(res, 200, renderEntry(e), 'text/plain; charset=utf-8') : send(res, 404, { error: 'not found' });
       }
       return send(res, 404, { error: 'not found' });
@@ -1793,6 +1846,7 @@ async function main() {
     // [B] 参数位
     //
     // [C] 参数位
+    usageMetaFile,
     //
     // [D] 参数位
     //

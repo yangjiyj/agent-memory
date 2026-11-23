@@ -307,11 +307,16 @@
   // ======================================================================
   (function triage() {
     const TABS = [['proposed', '待审候选'], ['dup', '疑似重复'], ['stale', '过期现状']];
+    // 其他模块追加的栏目（console-insight.js 的记忆缺口、冷记忆）：Console.triageTabs.push({ id, title, count() → 数字或 null, warm(render) 预取, show(body) 被选中时往 body 里画 })。
+    // 追加的栏目不算进侧栏徽标，路由是 #/triage/<id>。
+    const EXT = (Console.triageTabs = Console.triageTabs || []);
+    const allTabs = () => [...TABS, ...EXT.map((x) => [x.id, x.title])];
+    const extOf = (t) => EXT.find((x) => x.id === t);
     const PAGE = 40;
     let root = null; let D = null; let loadedAt = 0; let counts = null; let tab = null; let loading = null;
     const shown = { proposed: PAGE, dup: PAGE, stale: PAGE };
     const byId = () => new Map(D.entries.map((e) => [e.id, e]));
-    const numOf = (t) => (D ? (t === 'proposed' ? D.proposed.length : t === 'dup' ? D.duplicates.length : D.stale.length) : counts ? counts[t === 'dup' ? 'duplicates' : t] : null);
+    const numOf = (t) => (extOf(t) ? extOf(t).count?.() ?? null : D ? (t === 'proposed' ? D.proposed.length : t === 'dup' ? D.duplicates.length : D.stale.length) : counts ? counts[t === 'dup' ? 'duplicates' : t] : null);
 
     async function load(force) {
       if (loading) return loading;
@@ -337,8 +342,11 @@
 
     function render() {
       const tabs = root.querySelector('.mem-tabs');
-      tabs.innerHTML = TABS.map(([k, n]) => { const c = numOf(k); return `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${n}${c ? `<b>${c}</b>` : ''}</button>`; }).join('');
+      tabs.innerHTML = allTabs().map(([k, n]) => { const c = numOf(k); return `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${n}${c ? `<b>${c}</b>` : ''}</button>`; }).join('');
       const body = $('mem-tri-body');
+      const x = extOf(tab);
+      if (x) { if (body.dataset.ext !== x.id) { body.innerHTML = ''; body.dataset.ext = x.id; } x.show(body); return; }
+      body.dataset.ext = '';
       if (!D) { body.innerHTML = '<div class="empty">读取中…</div>'; return; }
       const m = byId();
       if (tab === 'proposed') {
@@ -402,10 +410,11 @@
         el.addEventListener('click', onClick);
       },
       async show(params) {
-        const want = TABS.some(([k]) => k === params.arg) ? params.arg : null;
+        const want = allTabs().some(([k]) => k === params.arg) ? params.arg : null;
         if (want) tab = want;
         if (!counts) { try { counts = await Console.api('/browse/manage-counts'); Console.badge('triage', counts.total); } catch { /* 数字读不到不影响页面 */ } }
         if (!tab) tab = TABS.find(([k]) => numOf(k) > 0)?.[0] || 'proposed';
+        EXT.forEach((x) => x.warm?.(render));
         render();
         try { await load(); } catch (e) { $('mem-tri-body').innerHTML = `<div class="empty">读取失败：${esc(e.message)}</div>`; return; }
         if (!want && !params.arg) { /* 保持当前标签 */ }

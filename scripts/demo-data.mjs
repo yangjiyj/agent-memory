@@ -877,7 +877,7 @@ async function main() {
 
     // 取回条目清单，给调用记录和改日期用
     const all = await call('GET', '/browse/data');
-    entryIds = all.entries.map((e) => ({ id: e.id, type: e.type, client: e.client, author: e.author }));
+    entryIds = all.entries.map((e) => ({ id: e.id, type: e.type, client: e.client, author: e.author, state: e.state }));
     log(`记忆库共 ${all.entries.length} 条（含作废和候选）`);
   } finally {
     await stopHub();
@@ -914,6 +914,38 @@ async function main() {
     if (op === 'memory_remember') return pick(['灰度发布先放 10%', '预发库迁移要避开整点', '证书续期提前一周提醒', '限流阈值按租户配置', '日报口径以订单创建时间为准', '回滚脚本必须保留上一版镜像']);
     return '';
   };
+  // ---- 用量洞察的新字段（hits / ids / dur / err）：单独用一个随机流，不影响其余各段的随机序列 ----
+  // 记忆分三档：常被读到的（约 5 成）、只在一个多月前读过一次的（约 1 成）、从没被读到过的（其余）；
+  // 有几类查询一直搜不到（证书续期的几种写法、限流阈值……），有的工具耗时高、有的失败率高
+  const R2 = mulberry32(SEED ^ 0x5bd1e995);
+  const r2 = (n) => Math.floor(R2() * n);
+  const range2 = (a, b) => a + r2(b - a + 1);
+  const pick2 = (a) => a[r2(a.length)];
+  const chance2 = (p) => R2() < p;
+  const gauss2 = () => Math.sqrt(-2 * Math.log(1 - R2())) * Math.cos(2 * Math.PI * R2());
+  const shuffle2 = (a) => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = r2(i + 1); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+  const pickW2 = (pairs) => { let r = R2() * pairs.reduce((a, [, w]) => a + w, 0); for (const [v, w] of pairs) { r -= w; if (r < 0) return v; } return pairs[pairs.length - 1][0]; };
+  const tiered = shuffle2(entryIds.filter((e) => e.state === 'active').map((e) => e.id));
+  const warmIds = tiered.slice(0, Math.round(tiered.length * 0.5));
+  const warmSet = new Set(warmIds);
+  const coolIds = tiered.slice(warmIds.length, warmIds.length + Math.round(tiered.length * 0.12));
+  const GAP_QUERIES = [['证书 续期', 6], ['续期 证书', 3], ['证书续期失败', 3], ['限流 阈值 租户', 3], ['限流 租户', 2], ['灰度 回滚 脚本', 2], ['回滚脚本 灰度', 1], ['推送 证书 安卓', 2], ['数据 脱敏 规则', 2], ['日报 邮件 模板', 1]];
+  const GAP_SET = new Set(GAP_QUERIES.map(([q]) => q));
+  const LAT = { memory_search: [70, 0.5], memory_get: [9, 0.4], memory_timeline: [240, 0.6], conversation_search: [1100, 0.75], conversation_get: [120, 0.5], memory_recent: [14, 0.4], memory_digest: [22, 0.4], memory_remember: [380, 0.5], memory_update: [320, 0.5], memory_handoff: [860, 0.6], memory_todos: [95, 0.5], memory_entities: [60, 0.5], kb_search: [180, 0.6], kb_read: [40, 0.5], memory_retire: [300, 0.5] };
+  const ERRS = { kb_search: 0.09, kb_read: 0.06, conversation_search: 0.04, memory_get: 0.03, memory_update: 0.12, memory_handoff: 0.02 };
+  const decorate = (u, op) => {
+    if (op === 'memory_get' && !warmSet.has(u.d)) u.d = pick2(warmIds);
+    let hits;
+    if (op === 'memory_search') {
+      if (!GAP_SET.has(u.d) && chance2(0.17)) u.d = pickW2(GAP_QUERIES);
+      hits = GAP_SET.has(u.d) ? 0 : range2(1, 8);
+    } else if (op === 'conversation_search') hits = chance2(0.22) ? 0 : range2(1, 6);
+    else if (op === 'kb_search') hits = chance2(0.3) ? 0 : range2(1, 4);
+    const failed = chance2(ERRS[op] ?? 0.004);
+    if (hits !== undefined && !failed) { u.hits = hits; if (op === 'memory_search' && hits) u.ids = shuffle2(warmIds).slice(0, hits); }
+    u.dur = Math.max(1, Math.round((LAT[op]?.[0] ?? 80) * Math.exp((LAT[op]?.[1] ?? 0.5) * gauss2())));
+    if (failed) u.err = 1;
+  };
   for (let k = 13; k >= 0; k--) {
     const f = dayFactor(k) * (k === 0 ? 0.6 : 1);
     for (const d of DEVICES) {
@@ -929,11 +961,17 @@ async function main() {
         if (d.name === 'work-mac' && /remember|update|retire/.test(op)) op = 'memory_search'; // 只读设备不写
         const cli = chance(0.07);
         usage.push({ t: iso(t), device: d.name, client: cli ? 'cli' : client, op: cli ? `cli:${op.replace(/^memory_/, '')}` : `tool:${op}`, ...(detail(op) ? { d: String(detail(op)) } : {}) });
+        decorate(usage[usage.length - 1], op);
       }
     }
     // 浏览器里打开控制台、大屏
     if (k <= 10 && wdayOf(k) !== 0 && chance(0.8)) for (let i = 0; i < range(1, 3); i++) usage.push({ t: iso(dayStart(k) + range(9, 22) * 3600e3 + rnd(3600) * 1000), device: 'desktop', client: 'browser', op: pick(['console', 'console', 'wall']) });
   }
+  // 14–35 天前：只补带新字段的记录——一部分记忆只在一个多月前被读过，加上几十次搜不到的查询，给冷记忆和缺口的 30 天窗口用
+  const OLD_DEVICES = ['desktop', 'laptop', 'work-mac', 'build-server'];
+  const oldAt = (k) => dayStart(k) + range2(9, 21) * 3600e3 + r2(3600) * 1000;
+  for (const id of coolIds) usage.push({ t: iso(oldAt(range2(31, 35))), device: pick2(OLD_DEVICES), client: 'claude-code', op: 'tool:memory_get', d: id, dur: range2(4, 20) });
+  for (let i = 0; i < 40; i++) usage.push({ t: iso(oldAt(range2(15, 29))), device: pick2(OLD_DEVICES), client: pick2(['claude-code', 'codex', 'hermes']), op: 'tool:memory_search', d: pickW2(GAP_QUERIES), hits: 0, dur: range2(30, 140) });
   // 几次整理操作（审计页里的"写入"）
   for (const [k, op, dd] of [[5, 'manage:retire', 'm-demo'], [3, 'manage:approve', 'c-demo'], [2, 'console:settings', 'device_labels'], [1, 'manage:merge', 'm-demo2']]) usage.push({ t: iso(dayStart(k) + range(10, 20) * 3600e3), device: 'desktop', client: 'console', op, d: dd });
   // 近 24 小时里拓扑页的事件带要用的：最近半小时的几次读写、报表被拉取、抽取机干活、控制台里的管理操作
@@ -943,12 +981,17 @@ async function main() {
     ['desktop', 'claude-code', 'memory_get', pick(entryIds).id, 11], ['laptop', 'claude-code', 'memory_handoff', 'mobile-app', 14], ['build-server', 'openclaw', 'memory_search', '证书 续期', 18],
     ['work-mac', 'codex', 'memory_search', '推送 权限', 23], ['desktop', 'claude-code', 'memory_update', pick(entryIds).id, 27], ['laptop', 'workbuddy', 'memory_todos', '', 33],
   ];
-  for (const [device, client, op, dd, ago] of recent) usage.push({ t: iso(NOW - ago * MIN - rnd(40) * 1000), device, client, op: `tool:${op}`, ...(dd ? { d: dd } : {}) });
+  for (const [device, client, op, dd, ago] of recent) {
+    usage.push({ t: iso(NOW - ago * MIN - rnd(40) * 1000), device, client, op: `tool:${op}`, ...(dd ? { d: dd } : {}) });
+    decorate(usage[usage.length - 1], op);
+  }
   for (const ago of [3, 21, 44, 95, 170]) usage.push({ t: iso(NOW - ago * MIN), device: 'journal-bot', client: 'unknown', op: ago % 2 ? 'extract:journal' : 'extract:session' });
   for (const [ago, op] of [[7 * 60, 'report:report'], [31 * 60, 'report:weekly']]) usage.push({ t: iso(NOW - ago * MIN), device: 'daily-report', client: 'unknown', op });
   usage.push({ t: iso(NOW - 52 * MIN), device: 'desktop', client: 'console', op: 'console:device-set', d: 'work-mac readonly' }, { t: iso(NOW - 3 * 3600e3), device: 'desktop', client: 'console', op: 'manage:approve', d: 'c-demo' });
   const merged = [...usage, ...existing].sort((a, b) => a.t.localeCompare(b.t));
   fs.writeFileSync(usagePath, `${merged.map((u) => JSON.stringify(u)).join('\n')}\n`);
+  // 带新字段的记录从 36 天前起算（冷记忆栏要写明这个日期，别冒充成"从没用过"）
+  writeJson(p('state', 'usage-meta.json'), { since: iso(dayStart(36) + 6 * 3600e3), fields: ['hits', 'ids', 'p', 'dur', 'err'] });
 
   // 3) 拒收记录（写入前拦截了疑似密钥）和自动保留记录
   const rej = [
