@@ -7,6 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { startHub, TOKENS, GATE_HEADERS } from './helpers.mjs';
 import { appendUsage, readUsage, writeMeta, writeEntryFile, row, ago } from './insight-util.mjs';
 
+// 受限的浏览者不能自己改隐藏列表（访问控制），测试里直接改令牌文件把它清掉
+const clearHide = (hub) => {
+  const f = hub.path('tokens.json');
+  const t = JSON.parse(fs.readFileSync(f, 'utf8'));
+  delete t.devices['my-laptop'].hide_projects;
+  fs.writeFileSync(f, JSON.stringify(t));
+};
+
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const mem = (device, days, q, hits, extra = {}) => row('tool:memory_search', device, days, { d: q, hits, ...extra });
 
@@ -120,7 +128,7 @@ describe('记忆缺口', () => {
     assert.ok(by(await gaps(), '机密 查询'));
     assert.equal((await hub.post('devices/my-laptop', { hide_projects: ['secret-proj'] })).status, 200);
     assert.ok(!by(await gaps(), '机密 查询'));
-    assert.equal((await hub.post('devices/my-laptop', { hide_projects: [] })).status, 200);
+    clearHide(hub);
     assert.ok(by(await gaps(), '机密 查询'));
   });
 
@@ -247,7 +255,7 @@ describe('冷记忆', () => {
     const c = await cold('?days=30');
     assert.ok(!ids(c).includes('m-20260901-a00006'));
     assert.equal(c.total, 3);
-    assert.equal((await hub.post('devices/my-laptop', { hide_projects: [] })).status, 200);
+    clearHide(hub);
   });
 
   it('days 越大越严：60 天内没被读到的更多（读过的 40 天前那条不算冷了）', async () => {
