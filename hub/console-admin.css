@@ -99,6 +99,9 @@
 .adm-code code { font: 12.5px/1.55 ui-monospace, Menlo, Consolas, monospace; color: #cde2fb; overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
 .adm-code + .adm-code { margin-top: 8px; }
 .adm-lab { display: block; margin: 12px 0 5px; font-size: 12.5px; color: var(--text-secondary); }
+.adm-codes { margin-top: 6px; }
+.adm-jc { display: grid; grid-template-columns: 1.2fr 1.2fr 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--panel-line); font-size: 13px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .adm-jc { grid-template-columns: 1fr auto; } .adm-jc span:nth-child(3) { grid-column: 1; } .adm-jc .btn { grid-row: 1 / span 3; grid-column: 2; } }
 .adm-addrs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
 .adm-addrs .adm-code { height: 100%; margin: 0; background: var(--panel); backdrop-filter: blur(8px); }
 .adm-addrs .adm-code > div > small { display: block; color: var(--text-secondary); font-size: 12px; margin-bottom: 4px; }

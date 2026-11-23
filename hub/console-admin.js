@@ -236,9 +236,24 @@
 
     // ---- 添加设备 ----
     function addDevice() {
-      let days = 7;
-      const m = modal({ title: '添加设备', wide: true, html: `<p>有效天数</p><div class="chips adm-days">${[1, 7, 30, 90].map((n) => `<button type="button" data-d="${n}" class="${n === 7 ? 'on' : ''}">${n} 天</button>`).join('')}</div><div class="adm-out"></div>`,
+      let days = 0;
+      const m = modal({ title: '添加设备', wide: true, html: `<p>加入码有效期</p><div class="chips adm-days">${[0, 7, 30, 90].map((n) => `<button type="button" data-d="${n}" class="${n === 0 ? 'on' : ''}">${n ? `${n} 天` : '长期'}</button>`).join('')}</div><p class="adm-note">设备加入后一直有效，期限只管这个码还能不能用来加新机器。</p><div class="adm-out"></div><div class="adm-codes"></div>`,
         actions: [{ label: '关闭' }, { label: '生成加入码', cls: 'go', onClick: gen }] });
+      const codes = m.el.querySelector('.adm-codes');
+      async function listCodes() {
+        try {
+          const { codes: list } = await api(`${A}join-codes`);
+          codes.innerHTML = list.length ? `<span class="adm-lab">还在生效的加入码</span>${list.map((c) => `<div class="adm-jc"><span>${h(absTime(c.created))} 生成</span><span>${c.expires ? `${h(absTime(c.expires))} 到期` : '长期'}</span><span>加入了 ${c.uses} 台</span><button class="btn" type="button" data-id="${h(c.id)}">作废</button></div>`).join('')}` : '';
+        } catch { codes.innerHTML = ''; }
+      }
+      codes.onclick = async (e) => {
+        const b = e.target.closest('[data-id]'); if (!b) return;
+        b.disabled = true;
+        try { await api(`${A}join-code/revoke`, { body: { id: b.dataset.id } }); Console.toast('加入码已作废', 'ok'); }
+        catch (err) { Console.toast(err.message, 'err'); }
+        listCodes();
+      };
+      listCodes();
       m.el.querySelector('.adm-days').onclick = (e) => {
         const b = e.target.closest('[data-d]'); if (!b) return;
         days = Number(b.dataset.d);
@@ -249,10 +264,11 @@
         const out = m.el.querySelector('.adm-out');
         try {
           const j = await api(`${A}join-code`, { body: { days } });
-          out.innerHTML = `<p>加入码 ${h(absTime(j.expires))} 到期（${j.days} 天）。</p>
+          out.innerHTML = `<p>${j.expires ? `这个加入码 ${h(absTime(j.expires))} 到期。` : '这个加入码长期有效，不用了可以在下面作废。'}</p>
             <span class="adm-lab">macOS / Linux</span><div class="adm-code"><code>${h(j.sh)}</code>${copyBtn(j.sh)}</div>
             <span class="adm-lab">Windows PowerShell</span><div class="adm-code"><code>${h(j.ps1)}</code>${copyBtn(j.ps1)}</div>`;
           btn.textContent = '重新生成';
+          listCodes();
         } catch (e) { out.innerHTML = `<p style="color:#f08a8a">${h(e.message)}</p>`; }
         btn.disabled = false;
         return false;

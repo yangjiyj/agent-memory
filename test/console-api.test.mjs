@@ -97,7 +97,7 @@ async function startHub(opts = {}) {
 
 const TOKENS = { 'my-laptop': { token: 'tok-laptop-secret-value' }, 'build-server': { token: 'tok-build-secret-value' } };
 const TOKEN_HASHES = (hub) => Object.values(hub.read('tokens.json').devices).map((v) => v.sha256);
-const ENDPOINTS = [['GET', 'devices'], ['POST', 'devices/build-server'], ['POST', 'join-code'], ['GET', 'mcp'], ['POST', 'mcp/tool'], ['GET', 'jobs'], ['GET', 'topology'], ['GET', 'settings'], ['POST', 'settings'], ['GET', 'conv/search?q=x'], ['GET', 'conv/abcdef12']];
+const ENDPOINTS = [['GET', 'devices'], ['POST', 'devices/build-server'], ['POST', 'join-code'], ['GET', 'join-codes'], ['POST', 'join-code/revoke'], ['GET', 'mcp'], ['POST', 'mcp/tool'], ['GET', 'jobs'], ['GET', 'topology'], ['GET', 'settings'], ['POST', 'settings'], ['GET', 'conv/search?q=x'], ['GET', 'conv/abcdef12']];
 
 describe('控制台接口：身份', () => {
   let hub;
@@ -262,13 +262,49 @@ describe('控制台接口：加入码', () => {
     assert.equal((await fetch(`${hub.base}/join/${r.json.code}`)).status, 200);
   });
 
-  it('不给 days 默认 7 天；超出 1–90 或不是整数是 400', async () => {
+  it('不给 days 默认 7 天；超出 0–90 或不是整数是 400', async () => {
     assert.equal((await hub.post('join-code', {})).json.days, 7);
-    for (const days of [0, 91, -1, 2.5, '7', null]) {
+    for (const days of [91, -1, 2.5, '7', null]) {
       const r = await hub.post('join-code', { days });
       assert.equal(r.status, 400, `days=${days}`);
       assert.match(r.json.error, /[一-龥]/);
     }
+  });
+
+  it('days 为 0 是长期有效：没有到期时间，码照样可用', async () => {
+    const r = await hub.post('join-code', { days: 0 });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.days, 0);
+    assert.equal(r.json.expires, null);
+    assert.equal((await fetch(`${hub.base}/join/${r.json.code}`)).status, 200);
+    assert.equal(hub.read('state/join.json')[Object.keys(hub.read('state/join.json')).pop()].expires, null);
+  });
+
+  it('列出还在生效的加入码，不泄露码本身；作废后立刻不能用', async () => {
+    const a = (await hub.post('join-code', { days: 0 })).json;
+    const b = (await hub.post('join-code', { days: 2 })).json;
+    const list = await hub.get('join-codes');
+    assert.equal(list.status, 200);
+    assert.ok(!JSON.stringify(list.json).includes(a.code) && !JSON.stringify(list.json).includes(b.code));
+    for (const c of list.json.codes) {
+      assert.match(c.id, /^[0-9a-f]{12}$/);
+      assert.equal(typeof c.uses, 'number');
+      assert.ok(Date.parse(c.created) <= Date.now());
+      assert.ok(c.expires === null || Date.parse(c.expires) > Date.now());
+    }
+    assert.ok(list.json.codes.some((c) => c.expires === null));
+    const before = list.json.codes.length;
+    // 最新生成的排最前
+    const newest = list.json.codes[0];
+    assert.ok(Date.parse(newest.expires) > Date.now(), '最新的是 2 天那个');
+    const gone = await hub.post('join-code/revoke', { id: newest.id });
+    assert.equal(gone.status, 200);
+    assert.equal((await fetch(`${hub.base}/join/${b.code}`)).status, 404);
+    assert.equal((await fetch(`${hub.base}/join/${a.code}`)).status, 200, '别的码不受影响');
+    assert.equal((await hub.get('join-codes')).json.codes.length, before - 1);
+    assert.equal((await hub.post('join-code/revoke', { id: newest.id })).status, 404);
+    for (const id of ['', 'xyz', 12, null, 'ABCDEF123456']) assert.equal((await hub.post('join-code/revoke', { id })).status, 400, `id=${id}`);
+    assert.match(fs.readFileSync(hub.path('state/usage.jsonl'), 'utf8'), /console:join-revoke/);
   });
 
   it('审计里记了天数，没有记加入码本身', async () => {
@@ -743,6 +779,9 @@ describe('命令行与接口共用的逻辑', () => {
       assert.equal(bad2.status, 1);
       assert.equal(bad2.stderr, '不认识的参数 color\n');
       assert.equal(hub.read('tokens.json').devices['build-server'].stale_hours, 48, '出错时不应写入');
+      const forever = run('join-code', '0');
+      assert.equal(forever.status, 0, forever.stderr);
+      assert.match(forever.stdout, /^长期有效，可以在任意多台机器上用：\n/);
       const j = run('join-code', '2');
       assert.equal(j.status, 0, j.stderr);
       assert.match(j.stdout, new RegExp(`^2 天内有效，可以在任意多台机器上用：\\nmacOS / Linux：curl -fsSL http://hub\\.example:${hub.port}/join/[0-9a-f]{24}/sh \\| bash\\nWindows PowerShell：irm http://hub\\.example:${hub.port}/join/[0-9a-f]{24}/ps1 \\| iex\\n说明页：http://hub\\.example:${hub.port}/join/[0-9a-f]{24}\\n$`));

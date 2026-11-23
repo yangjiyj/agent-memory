@@ -683,29 +683,51 @@ function renderInstall(it) {
 }
 
 // ------------------------------------------------------ reusable join code ----
-// 一个加入码 N 天内可以给任意多台机器用；每台机器登记时按主机名起设备名、各发各的令牌
+// 一个加入码在有效期内可以给任意多台机器用；每台机器登记时按主机名起设备名、各发各的令牌。
+// 期限只管这个码还能不能用来登记新机器，已经加入的设备不受影响。days 为 0 是长期有效（expires 为 null），要收回就作废。
 
 const joinFile = () => path.join(CFG.state, 'join.json');
+const joinAlive = (it) => Boolean(it) && (!it.expires || Date.parse(it.expires) >= Date.now());
+const joinExpiry = (days) => (days > 0 ? new Date(Date.now() + days * 86400e3).toISOString() : null);
+
+function saveJoinCodes(all) {
+  fs.mkdirSync(CFG.state, { recursive: true });
+  fs.writeFileSync(joinFile(), JSON.stringify(all, null, 1), { mode: 0o600 });
+}
 
 function createJoinCode(days = 7) {
   const code = crypto.randomBytes(12).toString('hex');
   const all = readJSON(joinFile(), {});
-  for (const [k, v] of Object.entries(all)) if (Date.parse(v.expires) < Date.now()) delete all[k];
-  all[sha256(code)] = { created: nowIso(), expires: new Date(Date.now() + days * 86400e3).toISOString(), uses: 0 };
-  fs.mkdirSync(CFG.state, { recursive: true });
-  fs.writeFileSync(joinFile(), JSON.stringify(all, null, 1), { mode: 0o600 });
+  for (const [k, v] of Object.entries(all)) if (!joinAlive(v)) delete all[k];
+  all[sha256(code)] = { created: nowIso(), expires: joinExpiry(days), uses: 0 };
+  saveJoinCodes(all);
   return code;
 }
 
 function joinCodeOk(code) {
-  const it = readJSON(joinFile(), {})[sha256(String(code))];
-  return Boolean(it) && Date.parse(it.expires) >= Date.now();
+  return joinAlive(readJSON(joinFile(), {})[sha256(String(code))]);
+}
+
+// 还在生效的加入码。库里只存了码的哈希，所以这里给不出码本身，id 是哈希的前 12 位
+function listJoinCodes() {
+  return Object.entries(readJSON(joinFile(), {})).filter(([, v]) => joinAlive(v))
+    .map(([k, v]) => ({ id: k.slice(0, 12), created: v.created, expires: v.expires || null, uses: v.uses || 0 }))
+    .sort((a, b) => (a.created < b.created ? 1 : -1));
+}
+
+function revokeJoinCode(id) {
+  const all = readJSON(joinFile(), {});
+  const key = Object.keys(all).find((k) => k.slice(0, 12) === id && joinAlive(all[k]));
+  if (!key) return false;
+  delete all[key];
+  saveJoinCodes(all);
+  return true;
 }
 
 function registerJoin(code, name) {
   const all = readJSON(joinFile(), {});
   const it = all[sha256(String(code))];
-  if (!it || Date.parse(it.expires) < Date.now()) throw new UserError('加入码无效或已过期');
+  if (!joinAlive(it)) throw new UserError('加入码无效或已过期');
   if (it.uses >= 200) throw new UserError('这个加入码登记的机器太多了，换一个新的');
   const base = String(name || 'device').toLowerCase().replace(/[^a-z0-9.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'device';
   const { devices = {} } = loadTokens();
@@ -744,7 +766,7 @@ function joinCommands(code, base = CFG.public_url) {
 // 生成加入码和安装命令（命令行 join-code 和控制台接口共用）
 function newJoinCode(days = 7, base = CFG.public_url) {
   const code = createJoinCode(days);
-  return { code, days, expires: new Date(Date.now() + days * 86400e3).toISOString(), ...joinCommands(code, base), page: `${base}/join/${code}` };
+  return { code, days, expires: joinExpiry(days), ...joinCommands(code, base), page: `${base}/join/${code}` };
 }
 
 // 改设备的巡检和权限参数（命令行 device-set 和控制台接口共用）。changes 里没出现的键不动；
@@ -1704,6 +1726,7 @@ async function main() {
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
     heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode, VERSION, agentVersion,
     tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
+    listJoinCodes, revokeJoinCode,
   });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
   setTimeout(vecTick, 30e3);
@@ -1747,10 +1770,10 @@ else if (cliCmd === 'invite') {
   const code = createInvite(cliArg1);
   process.stdout.write(`curl -fsSL ${CFG.public_url}/install/${code} | bash\n`);
 } else if (cliCmd === 'join-code') {
-  // 生成可重复使用的加入命令（默认 7 天有效），给多台机器用
-  const days = parseInt(cliArg1, 10) || 7;
+  // 生成可重复使用的加入命令（默认 7 天有效；join-code 0 是长期有效），给多台机器用
+  const days = /^(0|forever)$/.test(cliArg1 || '') ? 0 : parseInt(cliArg1, 10) || 7;
   const j = newJoinCode(days);
-  process.stdout.write(`${days} 天内有效，可以在任意多台机器上用：\nmacOS / Linux：${j.sh}\nWindows PowerShell：${j.ps1}\n说明页：${j.page}\n`);
+  process.stdout.write(`${days ? `${days} 天内有效` : '长期有效'}，可以在任意多台机器上用：\nmacOS / Linux：${j.sh}\nWindows PowerShell：${j.ps1}\n说明页：${j.page}\n`);
 } else if (cliCmd === 'device-set') {
   // 设巡检参数：device-set mac stale_hours=48 / device-set 某机 paused=true（停用、不告警）
   const changes = {};

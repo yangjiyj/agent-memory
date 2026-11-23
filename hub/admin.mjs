@@ -6,7 +6,9 @@
  *
  * 接口一览（相对 /console/api/）：
  *   GET  devices            POST devices/<名字>     改策略
- *   POST join-code          生成加入码
+ *   POST join-code          生成加入码（days 0 = 长期有效）
+ *   GET  join-codes         还在生效的加入码（不含码本身）
+ *   POST join-code/revoke   作废一个加入码
  *   GET  mcp                POST mcp/tool           停用/启用 MCP 工具
  *   GET  jobs               后台工作的最近情况
  *   GET  topology           拓扑页的全部数据（设备、网关、中心、存储、抽取机、向量服务、巡检问题）
@@ -94,6 +96,7 @@ export function createAdmin(ctx) {
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
     heartbeatFile, agentsOverview, watch, git, tools, store, conv, extras, pipe, deviceSet, newJoinCode, VERSION, agentVersion,
   } = ctx;
+  const { listJoinCodes, revokeJoinCode } = ctx;
 
   // ---- 配置读写：先写临时文件再改名，原文件留一份 .bak，并当场更新内存里的 CFG ----
   function saveConfig(changes) {
@@ -168,10 +171,18 @@ export function createAdmin(ctx) {
   }
 
   function joinCode(body, viewer) {
-    const days = body?.days === undefined ? 7 : intIn(body.days, 1, 90, 'days');
+    const days = body?.days === undefined ? 7 : intIn(body.days, 0, 90, 'days');
     const j = newJoinCode(days);
-    audit(viewer, 'join-code', `${days} 天`);
+    audit(viewer, 'join-code', days ? `${days} 天` : '长期');
     return j;
+  }
+
+  function revokeCode(body, viewer) {
+    const id = body?.id;
+    if (typeof id !== 'string' || !/^[0-9a-f]{12}$/.test(id)) throw bad('id 不对');
+    if (!revokeJoinCode(id)) throw new HttpError(404, '这个加入码已经失效或不存在');
+    audit(viewer, 'join-revoke', id);
+    return { ok: true };
   }
 
   // ---- mcp ----
@@ -395,6 +406,8 @@ export function createAdmin(ctx) {
       if (sub === 'devices') { only('GET'); return send(res, 200, devices()); }
       if ((m = /^devices\/([^/]+)$/.exec(sub))) { only('POST'); return send(res, 200, setDevice(decodeURIComponent(m[1]), await readBody(req), viewer)); }
       if (sub === 'join-code') { only('POST'); return send(res, 200, joinCode(await readBody(req), viewer)); }
+      if (sub === 'join-codes') { only('GET'); return send(res, 200, { codes: listJoinCodes() }); }
+      if (sub === 'join-code/revoke') { only('POST'); return send(res, 200, revokeCode(await readBody(req), viewer)); }
       if (sub === 'mcp') { only('GET'); return send(res, 200, mcp()); }
       if (sub === 'mcp/tool') { only('POST'); return send(res, 200, setTool(await readBody(req), viewer)); }
       if (sub === 'jobs') { only('GET'); return send(res, 200, await jobs()); }
