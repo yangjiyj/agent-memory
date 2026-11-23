@@ -73,6 +73,8 @@ describe('演示数据', () => {
     const d = await get('/console/api/devices');
     assert.ok(d.devices.filter((x) => x.role === 'device').length >= 5);
     assert.ok(d.devices.some((x) => x.policy.readonly) && d.devices.some((x) => x.policy.hide_projects.length));
+    const groups = d.devices.filter((x) => x.role === 'device').map((x) => x.group);
+    assert.ok(new Set(groups.filter(Boolean)).size >= 2 && groups.every(Boolean), '设备分了两三个组');
     const mcp = await get('/console/api/mcp');
     assert.ok(mcp.tools.some((t) => t.calls_7d > 0));
     const j = await get('/console/api/jobs');
@@ -88,6 +90,12 @@ describe('演示数据', () => {
       assert.equal(d.flow.hours.reduce((a, b) => a + b, 0), d.flow.up_24h);
     }
     assert.ok(devs.some((d) => d.flow.hours.filter((x) => x > 0).length >= 3));
+    for (const d of devs) {
+      assert.equal(d.flow.hours_down.length, 24);
+      assert.equal(d.flow.hours_down.reduce((a, b) => a + b, 0), d.flow.down_24h);
+    }
+    assert.ok(devs.some((d) => d.flow.hours_down.filter((x) => x > 0).length >= 3), '读取的心跳格也有内容');
+    assert.ok(devs.every((d) => d.group) && new Set(devs.map((d) => d.group)).size >= 2);
     assert.ok(devs.some((d) => d.agents.some((a) => a.up_24h > 0)) && devs.some((d) => d.agents.some((a) => a.down_24h > 0)));
     assert.equal(t.hub.up_24h, devs.reduce((a, d) => a + d.flow.up_24h, 0));
     assert.ok(t.hub.down_24h > 0);
@@ -98,5 +106,19 @@ describe('演示数据', () => {
     for (const k of ['read', 'write', 'talk', 'extract', 'report', 'console']) assert.ok(kinds.has(k), `事件缺 ${k}`);
     assert.ok(ev.filter((e) => Date.now() - Date.parse(e.t) < 35 * 60e3).length >= 8);
     assert.ok(new Set(ev.filter((e) => e.kind === 'read' || e.kind === 'write').map((e) => e.device)).size >= 4);
+  });
+
+  it('拓扑时间回放：历史接口每台设备都有流量和状态变化，事件格里有内容', async () => {
+    const h = await get('/console/api/topology/history?hours=48&bucket=15');
+    assert.equal(h.count, 192);
+    const live = (await get('/console/api/topology')).devices;
+    for (const d of h.devices) {
+      assert.equal(d.up.length, 192);
+      const l = live.find((x) => x.name === d.name);
+      assert.equal(d.up.slice(96).reduce((a, b) => a + b, 0), l.flow.up_24h, `${d.name} 最近 24 小时的写入和实时一致`);
+      assert.equal(d.down.slice(96).reduce((a, b) => a + b, 0), l.flow.down_24h, `${d.name} 最近 24 小时的读取和实时一致`);
+    }
+    assert.ok(new Set(h.devices.flatMap((d) => d.state)).size >= 3, '状态有变化');
+    assert.ok(h.events.filter(Boolean).length >= 10);
   });
 });

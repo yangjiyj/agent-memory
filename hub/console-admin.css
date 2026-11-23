@@ -179,3 +179,11 @@
 .adm-save.bad { border-color: rgba(208, 59, 59, .65); box-shadow: 0 14px 40px rgba(0, 0, 0, .5), 0 0 30px -8px rgba(208, 59, 59, .6); }
 .adm-save .msg { flex: 1; font-size: 13px; color: var(--text-secondary); min-width: 0; overflow-wrap: anywhere; }
 .adm-save.bad .msg { color: #f08a8a; }
+
+/* ---------- 设备分组 ---------- */
+.adm-gf { margin: 0; }
+.adm-gb { font: inherit; font-size: 12px; color: var(--text-secondary); background: transparent; border: 1px solid rgba(148, 163, 184, .28); border-radius: 999px; padding: 1px 10px; cursor: text; white-space: nowrap; transition: .15s; }
+.adm-gb.none { color: var(--text-muted); border-color: transparent; padding: 1px 12px; }
+.adm-gb:hover, .adm-gb:focus-visible { color: var(--text-primary); border-color: rgba(134, 182, 239, .5); background: rgba(57, 135, 229, .12); outline: none; }
+.adm-gc { white-space: nowrap; }
+.adm-gi { width: 118px; padding: 2px 8px; font-size: 12.5px; }

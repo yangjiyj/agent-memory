@@ -5,7 +5,7 @@
  * - 出错返回 4xx 和中文 error；配置和令牌永远不返回（gate_secret、令牌哈希都不出现）。
  *
  * 接口一览（相对 /console/api/）：
- *   GET  devices            POST devices/<名字>     改策略
+ *   GET  devices            POST devices/<名字>     改策略（readonly、hide_projects、paused、stale_hours、group）
  *   POST join-code          生成加入码（days 0 = 长期有效）
  *   GET  join-codes         还在生效的加入码（不含码本身）
  *   POST join-code/revoke   作废一个加入码
@@ -13,13 +13,14 @@
  *   GET  jobs               后台工作的最近情况
  *   GET  topology           拓扑页的全部数据（设备、网关、中心、存储、抽取机、向量服务、巡检问题，以及近 24 小时读写流量）
  *   GET  topology/events    拓扑页的事件流：?since=<ISO>&limit=<n，默认 30，最多 100>&project=<项目名，只给这个项目的对话>
+ *   GET  topology/history   拓扑时间回放：?hours=<1–48，默认 24>&bucket=<分钟 1–60，默认 15>，按设备给每格的写入量、读取量、状态，以及每格的事件（见 admin-topology.mjs）
  *   GET  settings           POST settings           白名单配置项
  *   GET  conv/search        GET  conv/<ref>         对话存档
  */
 
 import fs from 'node:fs';
 // 各功能的接口放在自己的 admin-<名字>.mjs 里，在这里 import；每组只改自己那一行（占位行之间隔着空行，合并时互不冲突）
-// [B] import 位
+import { createTopologyHistory } from './admin-topology.mjs';
 //
 // [C] import 位
 //
@@ -150,6 +151,7 @@ export function createAdmin(ctx) {
     const list = Object.entries(loadTokens().devices || {}).map(([name, d]) => ({
       name,
       label: labels[name] || '',
+      group: d.group || '',
       role: d.role || 'device',
       identity: peers[name] || d.via === 'gateway' ? 'gateway' : d.via === 'join' ? 'join' : 'token',
       created: d.created || null,
@@ -164,6 +166,16 @@ export function createAdmin(ctx) {
     return { default_stale_hours: CFG.stale_hours || DEFAULTS.stale_hours, devices: list };
   }
 
+  // 分组名：最多 20 个字，首尾空白去掉，空串/null/纯空白都是清掉（返回 null）
+  function groupName(v) {
+    if (v === null) return null;
+    if (typeof v !== 'string') throw bad('group 必须是字符串（最多 20 个字），传空串或 null 清掉分组');
+    const t = v.trim();
+    if ([...t].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw bad('group 里不能有换行等控制字符');
+    if ([...t].length > 20) throw bad('group 最多 20 个字');
+    return t || null;
+  }
+
   function setDevice(name, body, viewer) {
     if (!loadTokens().devices?.[name]) throw new HttpError(404, `没有设备 ${name}`);
     if (!isObj(body)) throw bad('请求体必须是 JSON 对象');
@@ -174,7 +186,8 @@ export function createAdmin(ctx) {
         if (typeof v !== 'boolean') throw bad(`${k} 必须是 true 或 false`);
         changes[k] = v;
       } else if (k === 'hide_projects') changes[k] = strList(v, 'hide_projects', { max: 100, len: 60 });
-      else throw bad(`不认识的字段 ${k}（可改：readonly、hide_projects、paused、stale_hours）`);
+      else if (k === 'group') changes[k] = groupName(v);
+      else throw bad(`不认识的字段 ${k}（可改：readonly、hide_projects、paused、stale_hours、group）`);
     }
     if (!Object.keys(changes).length) throw bad('没有要改的字段');
     const policy = deviceSet(name, changes);
@@ -286,12 +299,13 @@ export function createAdmin(ctx) {
   // 近 24 小时每台设备的读写流量。
   // 上行 up = 写入量 = 对话存档里新增的消息数 + remember/update/retire 的调用次数（两者都是"设备往中心送了东西"）；
   // 下行 down = 读取类调用次数（search/get/timeline/todos/handoff/entities/conversation_*/kb_* 等）；
-  // hours 是上行同口径按小时分的 24 格（最旧在前，最后一格是最近一小时），所以 sum(hours) === up_24h。
+  // hours 是上行同口径按小时分的 24 格（最旧在前，最后一格是最近一小时），所以 sum(hours) === up_24h；
+  // hours_down 是下行同口径、同样的 24 个时间格，所以 sum(hours_down) === down_24h。
   function flows(now) {
     const from = now - DAY;
     const bucket = (ms) => Math.min(23, Math.max(0, Math.floor((ms - from) / 3600e3)));
     const out = {};
-    const of = (dev) => (out[dev] ||= { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), agents: {} });
+    const of = (dev) => (out[dev] ||= { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), hours_down: Array(24).fill(0), agents: {} });
     const ag = (f, tool) => (f.agents[tool] ||= { up_24h: 0, down_24h: 0 });
     for (const [dev, tools] of Object.entries(conv().recentMessages(from))) {
       const f = of(dev);
@@ -305,7 +319,7 @@ export function createAdmin(ctx) {
       if (u.ms < from) break;
       if (u.ms > now || !isCall(u.op)) continue;
       const f = of(u.device);
-      if (isWrite(u.op)) { f.up_24h++; f.hours[bucket(u.ms)]++; ag(f, u.client).up_24h++; } else { f.down_24h++; ag(f, u.client).down_24h++; }
+      if (isWrite(u.op)) { f.up_24h++; f.hours[bucket(u.ms)]++; ag(f, u.client).up_24h++; } else { f.down_24h++; f.hours_down[bucket(u.ms)]++; ag(f, u.client).down_24h++; }
     }
     return out;
   }
@@ -320,7 +334,7 @@ export function createAdmin(ctx) {
     const hubFlow = { up_24h: 0, down_24h: 0 };
 
     const list = dv.devices.filter((d) => d.role === 'device').map((d) => {
-      const f = fl[d.name] || { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), agents: {} };
+      const f = fl[d.name] || { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), hours_down: Array(24).fill(0), agents: {} };
       hubFlow.up_24h += f.up_24h; hubFlow.down_24h += f.down_24h;
       const agents = Object.keys({ ...d.wiring, ...d.agents }).filter((k) => {
         if (k === 'cli' || k === 'test') return false;
@@ -332,10 +346,10 @@ export function createAdmin(ctx) {
       });
       const lastMsg = agents.map((a) => a.last_msg).filter(Boolean).sort().pop() || null;
       return {
-        name: d.name, label: d.label, identity: d.identity, version: d.version, last_seen: d.last_seen,
+        name: d.name, label: d.label, group: d.group, identity: d.identity, version: d.version, last_seen: d.last_seen,
         stale: Boolean(stale[d.name]), paused: d.policy.paused, readonly: d.policy.readonly,
         live: agents.some((a) => a.live), last_msg: lastMsg, agents,
-        flow: { up_24h: f.up_24h, down_24h: f.down_24h, hours: f.hours },
+        flow: { up_24h: f.up_24h, down_24h: f.down_24h, hours: f.hours, hours_down: f.hours_down },
       };
     });
 
@@ -406,6 +420,9 @@ export function createAdmin(ctx) {
   const EXTRACT_TEXT = { session: '抽取了一个会话', journal: '写了一段工作日志' };
   const withD = (base, d, quote) => { const t = short(redactSecrets(d || '')); return t && quote ? `${base}「${t}」` : base; };
 
+  // 一个会话一条对话事件，时间取它最近一条消息；同一会话之后又有新消息会换一个 id（带着时间）
+  const talkEvent = (s) => ({ id: `c${s.ref}:${Date.parse(s.last)}`, t: s.last, kind: 'talk', device: s.device, tool: s.tool, text: s.project ? `在 ${short(s.project)} 有新对话` : '有新对话', ...(s.project ? { project: s.project } : {}) });
+
   function eventOf(u) {
     const id = `u${u.at}`;
     const mk = (kind, text, tool) => ({ id, t: new Date(u.ms).toISOString(), kind, device: u.device, tool: tool || null, text });
@@ -449,7 +466,7 @@ export function createAdmin(ctx) {
     // 对话：一个会话一条，时间取它最近一条消息；同一会话之后又有新消息会换一个 id（带着时间）
     for (const s of conv().recentSessions(floor)) {
       if (project && s.project !== project) continue;
-      out.push({ id: `c${s.ref}:${Date.parse(s.last)}`, t: s.last, kind: 'talk', device: s.device, tool: s.tool, text: s.project ? `在 ${short(s.project)} 有新对话` : '有新对话', ...(s.project ? { project: s.project } : {}) });
+      out.push(talkEvent(s));
     }
     out.sort((a, b) => Date.parse(a.t) - Date.parse(b.t) || (a.id < b.id ? -1 : 1));
     return { now: nowIso(), events: out.slice(-limit) };
@@ -532,7 +549,7 @@ export function createAdmin(ctx) {
   // visibleTo(viewer, project)：浏览者按 hide_projects 能不能看这个项目（没有项目的内容都可见）；hiddenOf(viewer)：被隐藏的项目名（小写）
   const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY, visibleTo: ctx.visibleTo, hiddenOf: ctx.hiddenOf };
   const exts = [
-    // [B] 扩展位
+    createTopologyHistory(ctx, { ...kit, topo: { eventOf, talkEvent, isCall, isWrite, usageRows } }),
     //
     // [C] 扩展位
     //
