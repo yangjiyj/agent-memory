@@ -373,11 +373,11 @@ export function createConvLog(ctx) {
   }
 
   // 摘要里的一节：最近 3 天按天、按项目归并，只用写好的日志和会话标题（不放条数，免得每 10 分钟都变）
-  function recentSection(maxBytes = 1800, nDays = 3) {
+  function recentSection(maxBytes = 1800, nDays = 3, scope) {
     const out = [];
     for (let i = 0; i < nDays; i++) {
       const d = localDay(new Date(Date.now() - i * 86400e3).toISOString());
-      const xs = segmentsOf(d);
+      const xs = segmentsOf(d, scope);
       if (!xs.length) continue;
       const byProj = new Map();
       const loose = [];

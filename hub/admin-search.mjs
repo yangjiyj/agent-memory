@@ -114,7 +114,7 @@ export function createSearch(ctx, kit) {
   const visibleFn = (viewer) => {
     const hidden = new Set((kit.hiddenOf(viewer) || []).map((x) => String(x).toLowerCase()));
     const isHidden = (p) => hidden.size > 0 && hidden.has(String(p || '').toLowerCase());
-    return { hidden, isHidden, visible: (p) => !isHidden(p) };
+    return { hidden, isHidden, visible: (p) => !isHidden(p), scope: kit.scopeOf(viewer) };
   };
 
   // ---------------------------------------------------------------- 对话：grep + 逐个读 ----
@@ -175,6 +175,7 @@ export function createSearch(ctx, kit) {
   };
   // 命中的那条消息所在的项目；hidden 为真表示这个浏览者不该看见
   function projectOf(key, day, v) {
+    if (v.scope.on && !v.scope.session(key)) return { project: '', hidden: true }; // 会话归属的总口径（访问控制）：任何一天归在隐藏项目、或工作目录里有隐藏项目名
     const all = sessionProjects(key);
     const mine = all.find(([d]) => d === day)?.[1];
     if (mine) return { project: mine, hidden: v.isHidden(mine) };

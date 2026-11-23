@@ -1921,19 +1921,10 @@ async function main() {
     listJoinCodes, revokeJoinCode, internalGet,
     // 浏览者（设备名）按 hide_projects 能不能看某个项目；口径同 MCP 工具里的 visible()
     visibleTo: (viewer, project) => scopeOf(viewer).project(project), hiddenOf: (viewer) => hiddenFor({ device: viewer }),
-    // 各功能需要的 server 内部函数在自己的占位行上加；占位行之间隔着空行，合并时互不冲突
-    // [B] 参数位
-    //
-    // [C] 参数位
     usageMetaFile,
-    //
-    // [D] 参数位
     updateEntry, remember, digest, parseEntry,
-    //
-    // [E] 参数位
     searchMemory: search, byUpdated,
-    //
-    share, scopeOf, // [F] 参数位
+    share, scopeOf,
   });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
   setTimeout(vecTick, 30e3);

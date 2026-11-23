@@ -127,7 +127,7 @@ export function dupGroups(items) {
 
 export function createTools(ctx, kit) {
   const { CFG, readJSON, send, readBody, UserError, loadTokens, heartbeatFile, store, git, conv, updateEntry, remember, digest, parseEntry } = ctx;
-  const { HttpError, bad, isObj, audit, visibleTo, hiddenOf } = kit;
+  const { HttpError, bad, isObj, audit, visibleTo, hiddenOf, scopeOf } = kit;
 
   const rulesFile = () => path.join(CFG.state, 'digest-rules.json');
   const only = (req, m) => { if (req.method !== m) throw new HttpError(405, `这个接口只支持 ${m}`); };
@@ -275,7 +275,7 @@ export function createTools(ctx, kit) {
     const c = conv();
     const idx = c.index();
     const key = Object.keys(idx).find((k) => c.refOf(k) === ref);
-    if (!key) throw new HttpError(404, '没有这个会话');
+    if (!key || !scopeOf(viewer).session(key)) throw new HttpError(404, '没有这个会话'); // 口径同 /console/api/conv/<ref>：访问控制那套对会话的归属判断
     const e = idx[key];
     const projects = [];
     for (const d of Object.keys(e.days || {}).sort()) { const p = c.journal().get(d)?.[key]?.project; if (p) projects.push({ d, p }); }
@@ -341,21 +341,17 @@ export function createTools(ctx, kit) {
   }
 
   // 预览里去掉浏览者看不见的项目：每条记忆占一行，直接删行；"最近 3 天在做什么"那节按「项目：…」分段，删掉被隐藏项目的段
-  function redactText(text, info, hiddenEntries, hidden) {
+  function redactText(text, info, hiddenEntries, hidden, scope) {
     let out = text;
     for (const id of hiddenEntries) {
       const line = info.lines.get(id);
       if (line) out = out.replace(`${line}\n`, '');
     }
     if (hidden.size && info.recentBlock && out.includes(info.recentBlock)) {
-      const lines = info.recentBlock.split('\n').map((l) => {
-        if (!l.startsWith('- ')) return l;
-        const m = /^(- \d{2}-\d{2}（[^）]*）)(.*)$/.exec(l);
-        if (!m) return l;
-        const kept = m[2].split(' ｜ ').filter((seg) => { const i = seg.indexOf('：'); return i < 0 || !hidden.has(seg.slice(0, i).trim().toLowerCase()); });
-        return kept.length ? `${m[1]}${kept.join(' ｜ ')}` : null;
-      }).filter((l) => l !== null);
-      out = out.replace(info.recentBlock, lines.join('\n'));
+      // "最近 3 天"整节按浏览者的可见范围重新生成（会话归属的口径同访问控制）
+      const head = info.recentBlock.slice(0, info.recentBlock.indexOf('\n', 1) + 1);
+      const scoped = conv().recentSection(1800, 3, scope);
+      out = out.replace(info.recentBlock, scoped ? `${head}${scoped}` : '');
     }
     return out;
   }
@@ -398,7 +394,7 @@ export function createTools(ctx, kit) {
       options: {
         devices: devices.map((name) => ({ name, label: (CFG.device_labels || {})[name] || '', tools: [...tools.get(name)].sort() })),
       },
-      text: redactText(text, info, hiddenIds, hidden),
+      text: redactText(text, info, hiddenIds, hidden, scopeOf(viewer)),
       budget: { limit: CFG.digest_budget, used: info.bytes },
       omitted: info.omitted,
       titles: info.titles,

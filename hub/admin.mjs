@@ -18,27 +18,20 @@
  *   GET  conv/search        GET  conv/<ref>         对话存档
  *   GET  shares             POST shares             只读分享链接：列出 / 生成（项目时间线或交接包，有效期 1/7/30 天）
  *   POST shares/revoke      作废一个分享链接（见 admin-access.mjs）
+ *   GET  boot               首屏汇总：?page=<页面 id>，一次返回外壳启动和该页首屏要的 GET 数据 { prime: { "<URL>": 内容 } }（清单见 perf.mjs）
  *
  * 浏览者那台设备设了 hide_projects 时，上面各接口都不给被隐藏项目的内容（口径见 server.mjs 的 scopeOf，和 MCP 工具里的 visible() 一致）；
  * 这样的浏览者也不能改任何设备的 hide_projects（否则自己清掉就绕过去了）。
- *   GET  boot               首屏汇总：?page=<页面 id>，一次返回外壳启动和该页首屏要的 GET 数据 { prime: { "<URL>": 内容 } }（清单见 perf.mjs）
  */
 
 import fs from 'node:fs';
 import { bootPlan } from './perf.mjs';
-// 各功能的接口放在自己的 admin-<名字>.mjs 里，在这里 import；每组只改自己那一行（占位行之间隔着空行，合并时互不冲突）
+// 各功能的接口放在自己的 admin-<名字>.mjs 里
 import { createTopologyHistory } from './admin-topology.mjs';
-//
-// [C] import 位
 import { createInsight } from './admin-insight.mjs';
-//
-// [D] import 位
 import { createTools } from './admin-tools.mjs';
-//
-// [E] import 位
 import { createSearch } from './admin-search.mjs';
-//
-import { createAccess } from './admin-access.mjs'; // [F] import 位
+import { createAccess } from './admin-access.mjs';
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -631,17 +624,10 @@ export function createAdmin(ctx) {
   const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY, visibleTo: ctx.visibleTo, hiddenOf: ctx.hiddenOf, scopeOf: ctx.scopeOf };
   const exts = [
     createTopologyHistory(ctx, { ...kit, topo: { eventOf, talkEvent, isCall, isWrite, usageRows } }),
-    //
-    // [C] 扩展位
     createInsight(ctx, kit),
-    //
-    // [D] 扩展位
     createTools(ctx, kit),
-    //
-    // [E] 扩展位
     createSearch(ctx, kit),
-    //
-    createAccess(ctx, kit), // [F] 扩展位
+    createAccess(ctx, kit),
   ];
 
   // ---- 路由 ----
