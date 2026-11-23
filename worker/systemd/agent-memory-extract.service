@@ -1,0 +1,7 @@
+[Unit]
+Description=agent-memory: extract candidate memories from sessions
+
+[Service]
+Type=oneshot
+TimeoutStartSec=6h
+ExecStart=/usr/bin/node %h/agent-memory/worker/extract.mjs

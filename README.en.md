@@ -1,0 +1,58 @@
+# agent-memory
+
+**One shared memory for every AI coding agent on every machine you own — and a diary of what you did each day.**
+
+[中文](README.md)
+
+You use Claude Code on the desktop, Codex on the laptop, Hermes / OpenClaw on a server, WorkBuddy now and then… each agent remembers on its own, and switching tools or machines means starting from zero. agent-memory is a small self-hosted service that ties them together:
+
+- **Shared memory** — each agent's native memory files (Claude Code memory, Hermes `USER.md`, WorkBuddy `MEMORY.md`, …) sync to a hub; every agent can query and write through MCP tools; a digest (preferences, project status, what you've been doing lately) is injected into each tool's instruction file.
+- **Conversation archive + work journal** — every agent's conversations (user and assistant text only, secrets redacted) are uploaded incrementally and kept long-term; a cheap model writes one line per session per day ("what got done"). Ask any agent on any machine "what did I do last Thursday?" or "when did we ship that deploy?".
+- **Visualization** — open the hub in a browser: work calendar, per-day swimlanes for every machine and agent, project streams, a rotating "work galaxy", a live war room, a knowledge graph, a year-in-review, and a memory management console.
+- **Zero dependencies** — hub and device agent are single Node.js files (Node ≥ 18), no database; data is a git repo with one markdown file per memory.
+
+> The author runs it daily across 8 machines and 7 agents. Code favors "works and easy to change"; comments are in Chinese.
+
+## Supported agents
+
+Claude Code, Codex, WorkBuddy / WorkBuddy AI, CodeBuddy, Hermes, OpenClaw, OpenCode, Gemini CLI, Qwen Code (memory sync and/or conversation capture), plus Cursor, Windsurf and Claude Desktop (MCP only). `setup` detects what's installed and wires it up; MCP servers you disabled stay disabled.
+
+## MCP tools
+
+- Memory: `memory_search` (keyword + semantic), `memory_get`, `memory_remember`, `memory_update`, `memory_retire`, `memory_recent`, `memory_digest`
+- Timeline: `memory_timeline`, `conversation_search`, `conversation_get`
+- Handoff: `memory_handoff` (a ready-to-paste briefing for a project), `memory_todos` (unfinished work), `memory_entities` (relations between projects, machines, sites, versions)
+- Cards (optional read-only long docs): `kb_map`, `kb_search`, `kb_sections`, `kb_read`
+
+## Layout
+
+```
+agent/kb-agent.mjs   device agent: sync memory, upload conversations, write digests, stdio MCP proxy, self-update
+hub/                 hub: server.mjs (HTTP + MCP), convlog (archive/journal), extras (handoff/todos/graph/semantic…), web pages
+worker/              journal.mjs / extract.mjs — run nightly on any machine with Codex CLI
+gateway/am-gate.py   optional identity gateway (Tailscale names / libvirt VM names → zero-touch enrollment)
+gateway/am-embed.py  optional local embedding service (fastembed + bge-small-zh) for semantic search
+deploy/, scripts/    systemd examples, daily/weekly report script
+```
+
+## Quick start
+
+```bash
+sudo mkdir -p /srv/agent-memory/{app,repo,state,archive} && sudo chown -R $USER /srv/agent-memory
+cp hub/* agent/kb-agent.mjs /srv/agent-memory/app/
+cp config.example.json /srv/agent-memory/config.json
+touch /srv/agent-memory/archive/.am-archive
+export AGENT_MEMORY_CONFIG=/srv/agent-memory/config.json
+node /srv/agent-memory/app/server.mjs join-code 7     # prints one-line installers for macOS/Linux and Windows
+node /srv/agent-memory/app/server.mjs                 # or deploy/agent-memory.service
+```
+
+Run the printed installer on each machine. For the work journal, create an extractor token (`server.mjs add-device journal-bot extractor`), write `~/.config/agent-memory/extractor.json` on a machine with Codex CLI and enable the timers in `worker/systemd/`. Use a cheap model for these batch jobs.
+
+## Security
+
+Secrets (private keys, API keys, JWTs, password assignments, high-entropy strings) are rejected or redacted before storage; tokens are stored as sha256; per-device read-only and hidden projects; every read/write is logged and shown in an audit panel. Everything stays on your machines except the conversation snippets sent to the model you configure for journaling.
+
+## License
+
+MIT

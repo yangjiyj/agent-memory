@@ -1,0 +1,11 @@
+[Unit]
+Description=agent-memory work journal (03:10, 12:40, 19:40)
+
+[Timer]
+OnCalendar=*-*-* 03:10:00
+OnCalendar=*-*-* 12:40:00
+OnCalendar=*-*-* 19:40:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

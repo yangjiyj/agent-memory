@@ -1,0 +1,15 @@
+# 认证网关（中心所在的宿主机上）：/etc/systemd/system/am-gate.service
+# /etc/am-gate.env 里写 GATE_SECRET=<和中心 config.json 的 gate_secret 一样>、UPSTREAM=127.0.0.1:8790（或中心虚拟机地址）
+# 可选：VM_NETS=192.168.122.0/24  VM_GATEWAYS=192.168.122.1  LIBVIRT_NETS=default
+[Unit]
+Description=agent-memory identity gateway
+After=network-online.target tailscaled.service libvirtd.service
+
+[Service]
+EnvironmentFile=/etc/am-gate.env
+ExecStart=/usr/bin/python3 /usr/local/lib/am-gate/am-gate.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

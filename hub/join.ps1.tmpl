@@ -1,0 +1,48 @@
+# agent-memory one-line join for Windows (PowerShell 5.1+).
+# The same command works on any number of machines while it is valid; device name = computer name; re-running does not register twice.
+# If Node 18+ is missing, a copy is downloaded from the memory hub into ~/.agent-memory/node (no internet needed).
+$ErrorActionPreference = 'Stop'
+$Hub = '__HUB__'
+$Join = '__JOIN__'
+$Dir = Join-Path $env:USERPROFILE '.agent-memory'
+New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+
+function Test-NodeOk($p) {
+  if (-not $p -or -not (Test-Path $p)) { return $false }
+  try { return ([int](& $p -e "console.log(process.versions.node.split('.')[0])")) -ge 18 } catch { return $false }
+}
+$node = $null
+$cands = @(
+  (Get-Command node -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source),
+  (Join-Path $env:ProgramFiles 'nodejs\node.exe'),
+  (Join-Path $env:LOCALAPPDATA 'Programs\nodejs\node.exe'),
+  (Join-Path $Dir 'node\node.exe')
+)
+foreach ($c in $cands) { if (Test-NodeOk $c) { $node = $c; break } }
+if (-not $node) {
+  Write-Host 'Node 18+ not found, downloading a copy from the memory hub...'
+  $zip = Join-Path $Dir 'node.zip'
+  $tmp = Join-Path $Dir 'node.tmp'
+  Invoke-WebRequest -UseBasicParsing -Uri "$Join/node/win-x64" -OutFile $zip
+  if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
+  Expand-Archive -Force -Path $zip -DestinationPath $tmp
+  $inner = Get-ChildItem $tmp | Select-Object -First 1
+  $dest = Join-Path $Dir 'node'
+  if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+  Move-Item $inner.FullName $dest
+  Remove-Item -Recurse -Force $tmp, $zip
+  $node = Join-Path $dest 'node.exe'
+}
+
+$agentSource = @'
+__AGENT_SOURCE__
+'@
+$agent = Join-Path $Dir 'kb-agent.mjs'
+[IO.File]::WriteAllText($agent, $agentSource, (New-Object System.Text.UTF8Encoding $false))
+
+& $node $agent join $Join
+if ($LASTEXITCODE -ne 0) { throw 'register failed' }
+& $node $agent setup
+& $node $agent schedule
+& $node $agent sync
+Write-Host 'Done: syncing every 10 minutes. New agent sessions will have the agent-memory tools.'

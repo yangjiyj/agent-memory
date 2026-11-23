@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidates"],
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "body", "subject", "project", "tags"],
+        "properties": {
+          "type": { "type": "string", "enum": ["preference", "feedback", "decision", "status", "pitfall", "fact", "reference"] },
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "subject": { "type": "string" },
+          "project": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

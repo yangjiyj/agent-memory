@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["segments"],
+  "properties": {
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary", "points", "project", "status"],
+        "properties": {
+          "id": { "type": "integer" },
+          "summary": { "type": "string" },
+          "points": { "type": "array", "items": { "type": "string" } },
+          "project": { "type": "string" },
+          "status": { "type": "string", "enum": ["done", "ongoing", "blocked", "chat"] }
+        }
+      }
+    }
+  }
+}

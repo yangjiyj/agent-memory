@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>你的 AI 工作年报</title>
+<style>
+  :root { color-scheme: dark; --ink: #f2f4fb; --soft: #b9c2dc; --mute: #7d88a8; --b1: #3987e5; --b2: #9085e9; --o: #ec835a; --g: #199e70; --m: #d55181; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #070a16; color: var(--ink); font: 15px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; overflow: hidden; }
+  .bg { position: fixed; inset: -20%; transition: background 1s; filter: blur(0); }
+  .slide { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 6vh 6vw; opacity: 0; transform: translateY(24px) scale(.985); transition: opacity .6s, transform .6s; pointer-events: none; }
+  .slide.on { opacity: 1; transform: none; pointer-events: auto; }
+  .card { width: min(880px, 100%); }
+  .kicker { color: var(--soft); font-size: 15px; letter-spacing: 2px; margin-bottom: 10px; }
+  .big { font-size: clamp(54px, 10vw, 120px); font-weight: 800; line-height: 1; letter-spacing: -1px; font-variant-numeric: tabular-nums;
+         background: linear-gradient(90deg, #fff, #9ec5f4 40%, #b9b0f5 70%, #f5b08f); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 0 30px rgba(144,133,233,.35)); }
+  .big small { font-size: .32em; font-weight: 600; letter-spacing: 0; }
+  h2 { font-size: clamp(26px, 4vw, 40px); margin: 14px 0 8px; font-weight: 700; }
+  p { color: var(--soft); font-size: 17px; margin: 8px 0; }
+  .em { color: var(--ink); font-weight: 600; }
+  .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-top: 22px; }
+  .tile { background: rgba(255,255,255,.05); border: 1px solid rgba(158,197,244,.18); border-radius: 16px; padding: 14px 16px; backdrop-filter: blur(6px); }
+  .tile .v { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--soft); font-size: 13px; }
+  .quote { margin-top: 18px; padding: 14px 18px; border-left: 3px solid var(--b2); background: rgba(255,255,255,.04); border-radius: 0 12px 12px 0; color: var(--ink); font-size: 16px; }
+  .quote .meta { color: var(--mute); font-size: 13px; margin-top: 6px; }
+  .bars { margin-top: 18px; }
+  .bar { display: grid; grid-template-columns: 120px 1fr 70px; gap: 10px; align-items: center; margin: 9px 0; }
+  .bar .t { height: 14px; background: rgba(255,255,255,.06); border-radius: 7px; overflow: hidden; }
+  .bar .f { height: 100%; width: 0; border-radius: 7px; transition: width 1.2s cubic-bezier(.2,.8,.2,1); box-shadow: 0 0 14px -2px currentColor; }
+  .bar .n { text-align: right; color: var(--soft); font-variant-numeric: tabular-nums; }
+  .hours { display: flex; align-items: flex-end; gap: 4px; height: 160px; margin-top: 22px; }
+  .hours div { flex: 1; background: linear-gradient(#9ec5f4, #3987e5); border-radius: 4px 4px 0 0; height: 0; transition: height 1s cubic-bezier(.2,.8,.2,1); position: relative; }
+  .hours div.peak { background: linear-gradient(#f5b08f, #d95926); box-shadow: 0 0 18px rgba(236,131,90,.6); }
+  .hours div.night { background: linear-gradient(#b9b0f5, #6250d6); }
+  .hl { display: flex; justify-content: space-between; color: var(--mute); font-size: 12px; margin-top: 6px; }
+  .cloud { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: baseline; margin-top: 20px; }
+  .cloud span { color: var(--soft); transition: transform .4s; }
+  .cloud span b { font-weight: 700; }
+  .cloud span i { font-style: normal; color: var(--mute); font-size: 13px; margin-left: 4px; }
+  .projs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 18px; }
+  .pj { background: rgba(255,255,255,.045); border: 1px solid rgba(158,197,244,.16); border-radius: 14px; padding: 12px 14px; }
+  .pj .h { display: flex; justify-content: space-between; align-items: baseline; }
+  .pj .h b { font-size: 18px; }
+  .pj .h span { color: var(--soft); font-size: 13px; }
+  .pj .s { color: var(--soft); font-size: 12.5px; margin-top: 6px; }
+  .pj .m { color: var(--ink); font-size: 12.5px; margin-top: 6px; border-top: 1px dashed rgba(158,197,244,.18); padding-top: 6px; }
+  .tl { margin-top: 16px; border-left: 2px solid rgba(158,197,244,.25); padding-left: 16px; }
+  .tl div { position: relative; margin: 10px 0; color: var(--ink); font-size: 14.5px; }
+  .tl div::before { content: ""; position: absolute; left: -22px; top: 7px; width: 10px; height: 10px; border-radius: 50%; background: var(--o); box-shadow: 0 0 10px var(--o); }
+  .tl div em { font-style: normal; color: var(--mute); font-size: 12.5px; margin-right: 8px; }
+  .nav { position: fixed; left: 0; right: 0; bottom: 22px; display: flex; justify-content: center; gap: 7px; z-index: 5; }
+  .nav i { width: 8px; height: 8px; border-radius: 4px; background: rgba(255,255,255,.22); transition: width .3s, background .3s; cursor: pointer; }
+  .nav i.on { width: 26px; background: linear-gradient(90deg, #3987e5, #9085e9); }
+  .hint { position: fixed; right: 22px; bottom: 18px; color: var(--mute); font-size: 12.5px; z-index: 5; }
+  .home { position: fixed; left: 22px; top: 18px; color: var(--mute); font-size: 13px; text-decoration: none; z-index: 5; }
+  .home:hover { color: var(--ink); }
+  .loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--soft); }
+</style>
+</head>
+<body>
+<div class="bg" id="bg"></div>
+<a class="home" href="/browse/viz">← 工作宇宙</a>
+<div class="loading" id="loading">正在翻你这几个月的对话…（第一次要统计一下，几秒钟）</div>
+<div id="slides"></div>
+<div class="nav" id="nav"></div>
+<div class="hint">点击 / → 下一页 · ← 上一页</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TOOL = { 'claude-code': 'Claude Code', codex: 'Codex', workbuddy: 'WorkBuddy', codebuddy: 'CodeBuddy', hermes: 'Hermes', openclaw: 'OpenClaw', opencode: 'OpenCode', gemini: 'Gemini', qwen: 'Qwen' };
+let DEVICE = {}; // 设备显示名：中心 config.json 的 device_labels，如 { "my-laptop": "笔记本" }
+const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9'];
+const WEEK = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const wan = (n) => (n >= 1e4 ? `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}<small>万</small>` : Math.round(n).toLocaleString());
+const md = (d) => (d ? `${parseInt(d.slice(5, 7), 10)} 月 ${parseInt(d.slice(8, 10), 10)} 日` : '');
+const BGS = [
+  'radial-gradient(60% 50% at 20% 20%, rgba(57,135,229,.45), transparent), radial-gradient(50% 50% at 80% 70%, rgba(144,133,233,.4), transparent), #070a16',
+  'radial-gradient(60% 50% at 80% 20%, rgba(25,158,112,.4), transparent), radial-gradient(50% 50% at 20% 80%, rgba(57,135,229,.35), transparent), #070a16',
+  'radial-gradient(60% 50% at 30% 30%, rgba(217,89,38,.4), transparent), radial-gradient(50% 50% at 75% 75%, rgba(213,81,129,.35), transparent), #0a0712',
+  'radial-gradient(60% 50% at 70% 30%, rgba(201,133,0,.35), transparent), radial-gradient(50% 50% at 25% 75%, rgba(25,158,112,.3), transparent), #070a12',
+  'radial-gradient(60% 60% at 50% 20%, rgba(98,80,214,.55), transparent), radial-gradient(40% 40% at 80% 85%, rgba(57,135,229,.25), transparent), #05040f',
+  'radial-gradient(60% 50% at 20% 30%, rgba(236,131,90,.35), transparent), radial-gradient(50% 50% at 80% 70%, rgba(57,135,229,.35), transparent), #070a16',
+  'radial-gradient(60% 50% at 75% 25%, rgba(144,133,233,.45), transparent), radial-gradient(50% 50% at 20% 80%, rgba(25,158,112,.3), transparent), #070a16',
+  'radial-gradient(60% 50% at 25% 25%, rgba(57,135,229,.4), transparent), radial-gradient(50% 50% at 80% 75%, rgba(201,133,0,.3), transparent), #070a16',
+  'radial-gradient(60% 50% at 70% 30%, rgba(213,81,129,.4), transparent), radial-gradient(50% 50% at 25% 75%, rgba(144,133,233,.35), transparent), #0a0714',
+  'radial-gradient(60% 50% at 30% 25%, rgba(217,89,38,.4), transparent), radial-gradient(50% 50% at 75% 80%, rgba(201,133,0,.3), transparent), #0a0810',
+  'radial-gradient(70% 60% at 50% 40%, rgba(57,135,229,.45), transparent), radial-gradient(40% 40% at 50% 90%, rgba(144,133,233,.4), transparent), #070a16',
+];
+let cur = 0;
+let pages = [];
+
+function countUp(root) {
+  root.querySelectorAll('[data-n]').forEach((n) => {
+    const target = Number(n.dataset.n); const fmt = n.dataset.f || 'int'; const t0 = performance.now(); const dur = 1300;
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur); const v = target * (1 - Math.pow(1 - k, 3));
+      n.innerHTML = fmt === 'wan' ? wan(v) : fmt === 'pct' ? `${v.toFixed(0)}<small>%</small>` : Math.round(v).toLocaleString();
+      if (k < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+  setTimeout(() => {
+    root.querySelectorAll('.f[data-w]').forEach((f) => { f.style.width = `${f.dataset.w}%`; });
+    root.querySelectorAll('.hours div[data-h]').forEach((f) => { f.style.height = `${f.dataset.h}%`; });
+  }, 120);
+}
+function show(i) {
+  cur = Math.max(0, Math.min(pages.length - 1, i));
+  document.querySelectorAll('.slide').forEach((s, k) => s.classList.toggle('on', k === cur));
+  document.querySelectorAll('.nav i').forEach((s, k) => s.classList.toggle('on', k === cur));
+  $('bg').style.background = BGS[cur % BGS.length];
+  const s = document.querySelectorAll('.slide')[cur];
+  s.querySelectorAll('.f[data-w]').forEach((f) => { f.style.width = 0; });
+  s.querySelectorAll('.hours div[data-h]').forEach((f) => { f.style.height = 0; });
+  countUp(s);
+}
+
+function build(d) {
+  DEVICE = d.device_labels || {};
+  const k = d.kpi;
+  const books = d.words.user / 880000; // 《三体》三部曲约 88 万字
+  const late = d.night.late;
+  const peakW = WEEK[d.peakHour.weekday];
+  const hoursMax = Math.max(...d.peakHour.hours) || 1;
+  const toolsTotal = d.tools.reduce((a, [, n]) => a + n, 0) || 1;
+  const phMax = d.phrases[0]?.[1] || 1;
+  pages = [
+    // 1 封面
+    `<div class="card"><div class="kicker">你的 AI 工作年报 · ${esc(d.range.from)} → ${esc(d.range.to)}</div>
+      <div class="big"><span data-n="${k.sessions}">0</span></div>
+      <h2>个会话，${d.range.days} 天，${k.devices} 台机器，${k.tools} 种智能体</h2>
+      <p>这是你和 Claude Code、Codex、WorkBuddy、Hermes、OpenClaw……一起干活的几个月。往下翻。</p></div>`,
+    // 2 字数
+    `<div class="card"><div class="kicker">你们说了多少话</div>
+      <div class="big"><span data-n="${d.words.user}" data-f="wan">0</span><small> 字</small></div>
+      <h2>是你发给智能体的（含粘贴进去的需求、日志和交接）</h2>
+      <p>它们回了你 <span class="em" data-n="${d.words.assistant}" data-f="wan">0</span> 字。你一共发了 <span class="em" data-n="${d.words.userMessages}">0</span> 条消息。</p>
+      <p>光是你写给它们的，就够 <span class="em">${books.toFixed(0)}</span> 套《三体》三部曲。</p></div>`,
+    // 3 最忙的一天
+    d.busiest ? `<div class="card"><div class="kicker">最忙的一天</div>
+      <div class="big">${md(d.busiest.date)}</div>
+      <h2><span data-n="${d.busiest.s}">0</span> 段会话、<span data-n="${d.busiest.m}">0</span> 条消息</h2>
+      <p>那天在忙：${d.busiest.projects.map(([p, n]) => `<span class="em">${esc(p)}</span> ${n} 段`).join('，')}</p>
+      ${(d.busiest.top || []).map((x) => `<div class="quote">${esc(x.t)}<div class="meta">${esc(x.p || '')}</div></div>`).join('')}</div>` : '',
+    // 4 连续作战 + 周末
+    `<div class="card"><div class="kicker">连续作战</div>
+      <div class="big"><span data-n="${d.streak.n}">0</span><small> 天</small></div>
+      <h2>一天都没停过：${md(d.streak.from)} → ${md(d.streak.to)}</h2>
+      <p>周末也没闲着：<span class="em">${(d.weekend.share * 100).toFixed(0)}%</span> 的会话发生在周六日，差不多每三段工作就有一段在周末。</p></div>`,
+    // 5 夜猫子
+    `<div class="card"><div class="kicker">夜猫子指数</div>
+      <div class="big"><span data-n="${d.night.days}">0</span><small> 个凌晨</small></div>
+      <h2>你在 0–5 点还在给智能体发消息，一共 <span data-n="${d.night.messages}">0</span> 条</h2>
+      <p style="font-size:13px;color:var(--mute)">（按"你这边发出的消息"算，含定时任务和别的会话转过来的）</p>
+      ${late ? `<p>最晚的一次是 <span class="em">${md(late.date)} 凌晨 ${esc(late.time)}</span>，你对 ${esc(TOOL[late.tool] || late.tool)} 说：</p>
+      <div class="quote">“${esc(late.text)}”<div class="meta">${esc(DEVICE[late.device] || late.device)} ·「${esc(late.title || '')}」</div></div>` : ''}</div>`,
+    // 6 高峰时刻
+    `<div class="card"><div class="kicker">你的高峰时刻</div>
+      <div class="big">${d.peakHour.hours.indexOf(hoursMax)}<small> 点</small></div>
+      <h2>一天里你最常在这个钟点找智能体干活</h2>
+      <p>一周 168 个小时里最忙的一格是 <span class="em">${peakW} ${d.peakHour.hour} 点</span>。</p>
+      <div class="hours">${d.peakHour.hours.map((n, h) => `<div data-h="${Math.max(2, (100 * n) / hoursMax)}" class="${n === hoursMax ? 'peak' : h < 5 ? 'night' : ''}" title="${h} 点：${n} 条"></div>`).join('')}</div>
+      <div class="hl"><span>0 点</span><span>6</span><span>12</span><span>18</span><span>23 点</span></div>
+      <p style="margin-top:12px">紫色是凌晨，橙色是全天最忙的那个小时。</p></div>`,
+    // 7 AI 搭档
+    `<div class="card"><div class="kicker">你的 AI 搭档</div>
+      <div class="big">${esc(TOOL[d.tools[0]?.[0]] || d.tools[0]?.[0] || '')}</div>
+      <h2>是你用得最多的，占 ${((100 * (d.tools[0]?.[1] || 0)) / toolsTotal).toFixed(0)}% 的会话</h2>
+      <div class="bars">${d.tools.slice(0, 7).map(([t, n], i) => `<div class="bar"><span>${esc(TOOL[t] || t)}</span><span class="t"><span class="f" data-w="${(100 * n) / d.tools[0][1]}" style="background:${COLORS[i % 7]};color:${COLORS[i % 7]}"></span></span><span class="n">${n.toLocaleString()} 段</span></div>`).join('')}</div>
+      <p>干活最多的机器：${d.devices.slice(0, 3).map(([x, n]) => `<span class="em">${esc(DEVICE[x] || x)}</span> ${n} 段`).join('、')}</p></div>`,
+    // 8 项目
+    `<div class="card"><div class="kicker">你的项目</div>
+      <h2>${esc(d.projects[0]?.p || '')} 占了最多的心思：<span data-n="${d.projects[0]?.n || 0}">0</span> 段会话</h2>
+      <div class="projs">${d.projects.map((p, i) => `<div class="pj"><div class="h"><b style="color:${COLORS[i % 7]}">${esc(p.p)}</b><span>${p.n} 段 · ${p.days} 天</span></div>
+        <div class="s">${md(p.first)} → ${md(p.last)} · 大事 ${p.milestones} 件</div>
+        ${p.best.length ? `<div class="m">${esc(p.best[p.best.length - 1].summary)}</div>` : ''}</div>`).join('')}</div></div>`,
+    // 9 口头禅
+    `<div class="card"><div class="kicker">你最常说的话</div>
+      <div class="big">“${esc(d.phrases[0]?.[0] || '')}”</div>
+      <h2>你一共说了 <span data-n="${d.phrases[0]?.[1] || 0}">0</span> 次</h2>
+      <div class="cloud">${d.phrases.slice(1).map(([t, n]) => `<span style="font-size:${14 + 22 * Math.sqrt(n / phMax)}px"><b>${esc(t)}</b><i>${n}</i></span>`).join('')}</div></div>`,
+    // 10 大事记
+    `<div class="card"><div class="kicker">这几个月干成的事</div>
+      <div class="big"><span data-n="${d.milestones.total}">0</span><small> 件</small></div>
+      <h2>上线、发布、交付、升级现场、合并 main……最近这几件：</h2>
+      <div class="tl">${d.milestones.recent.slice().reverse().map((m) => `<div><em>${md(m.date)} · ${esc(m.project || '')}</em>${esc(m.summary)}</div>`).join('')}</div></div>`,
+    // 11 结尾
+    `<div class="card" style="text-align:center"><div class="kicker">而且它还在长</div>
+      <div class="big"><span data-n="${d.memories.total}">0</span></div>
+      <h2>条记忆，所有机器、所有智能体共享</h2>
+      <p>每 10 分钟，新的对话汇进来；每天三次，写成日志。<br>明天你在任何一台机器上问"那件事哪天做的"，它都记得。</p>
+      <p style="margin-top:22px"><a href="/browse/viz" style="color:#9ec5f4">去工作宇宙看看 →</a>　<a href="/browse/viz#replay" style="color:#f5b08f">看时光回放 ▶</a></p></div>`,
+  ].filter(Boolean);
+  $('slides').innerHTML = pages.map((h) => `<section class="slide">${h}</section>`).join('');
+  $('nav').innerHTML = pages.map((_, i) => `<i data-i="${i}"></i>`).join('');
+  $('nav').querySelectorAll('i').forEach((n) => { n.onclick = (e) => { e.stopPropagation(); show(Number(n.dataset.i)); }; });
+  $('loading').remove();
+  show(0);
+}
+addEventListener('keydown', (e) => { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') show(cur + 1); if (e.key === 'ArrowLeft' || e.key === 'PageUp') show(cur - 1); });
+addEventListener('click', (e) => { if (e.target.closest('a')) return; show(e.clientX < innerWidth / 3 ? cur - 1 : cur + 1); });
+fetch('/browse/wrapped-data').then((r) => r.json()).then(build).catch((e) => { $('loading').textContent = `读取失败：${e.message}`; });
+</script>
+</body>
+</html>

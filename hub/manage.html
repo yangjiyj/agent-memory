@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>记忆管理台 · 共享记忆</title>
+<style>
+  :root { color-scheme: dark; --surface: #0b1020; --panel: rgba(17,25,48,.78); --line: rgba(110,150,255,.16); --ink: #e8ecf6; --soft: #a3aecb; --mute: #6f7a99; --glow: rgba(57,135,229,.35); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(1000px 500px at 10% -10%, rgba(57,135,229,.16), transparent 60%), var(--surface); color: var(--ink); font: 14px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif; min-height: 100vh; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 20px 22px 60px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { margin: 0; font-size: 24px; background: linear-gradient(90deg, #e8ecf6, #86b6ef); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { color: var(--soft); font-size: 13px; }
+  a { color: #86b6ef; text-decoration: none; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; position: sticky; top: 8px; z-index: 3; backdrop-filter: blur(8px); }
+  .bar input, .bar select { font: inherit; font-size: 13px; color: var(--ink); background: rgba(11,16,32,.7); border: 1px solid var(--line); border-radius: 8px; padding: 5px 9px; }
+  .bar input[type=search] { flex: 1; min-width: 220px; }
+  .tab { font: inherit; font-size: 13px; color: var(--soft); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; cursor: pointer; }
+  .tab.on { color: var(--ink); background: rgba(57,135,229,.2); border-color: rgba(134,182,239,.55); }
+  .tab b { color: #fbc54b; font-weight: 600; margin-left: 4px; }
+  button.act { font: inherit; font-size: 12.5px; color: var(--ink); background: rgba(57,135,229,.14); border: 1px solid var(--line); border-radius: 7px; padding: 3px 10px; cursor: pointer; }
+  button.act:hover { background: rgba(57,135,229,.3); }
+  button.act.warn { background: rgba(208,59,59,.14); border-color: rgba(208,59,59,.4); }
+  button.act.ok { background: rgba(12,163,12,.14); border-color: rgba(12,163,12,.45); }
+  .item { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 8px; }
+  .item .h { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+  .item .h input { margin-top: 4px; }
+  .item .t { font-weight: 600; }
+  .item .m { color: var(--mute); font-size: 12px; margin-top: 2px; }
+  .pill { display: inline-block; border-radius: 999px; padding: 0 7px; font-size: 11.5px; margin-right: 4px; border: 1px solid rgba(148,163,184,.3); color: var(--soft); }
+  .pill.type { border-color: rgba(57,135,229,.5); color: #9ec5f4; }
+  .pill.warn { border-color: rgba(250,178,25,.5); color: #fbc54b; }
+  .pill.bad { border-color: rgba(208,59,59,.5); color: #f08a8a; }
+  .body { white-space: pre-wrap; font-size: 13px; color: var(--soft); margin: 8px 0 0 26px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .acts { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 0 26px; }
+  .edit { margin: 8px 0 0 26px; display: grid; gap: 6px; }
+  .edit input, .edit textarea { font: inherit; font-size: 13px; color: var(--ink); background: rgba(11,16,32,.7); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; }
+  .edit textarea { min-height: 160px; resize: vertical; }
+  .grp { background: var(--panel); border: 1px solid rgba(250,178,25,.35); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+  .grp .row { display: grid; grid-template-columns: 24px 1fr; gap: 6px; padding: 6px 0; border-top: 1px solid rgba(110,150,255,.08); }
+  .grp .row .bd { color: var(--soft); font-size: 12.5px; white-space: pre-wrap; max-height: 90px; overflow: hidden; }
+  .empty { color: var(--mute); text-align: center; padding: 30px 0; }
+  .toast { position: fixed; right: 20px; bottom: 20px; background: rgba(8,12,26,.96); border: 1px solid rgba(134,182,239,.4); border-radius: 10px; padding: 10px 14px; opacity: 0; transition: opacity .2s; }
+  .toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1>记忆管理台</h1><div class="sub" id="sum">读取中…</div></div>
+    <div><a href="/browse/viz">← 工作宇宙</a>　<a href="/browse">记忆浏览</a></div>
+  </header>
+  <div class="bar">
+    <button class="tab on" data-v="all">全部</button>
+    <button class="tab" data-v="dup">疑似重复</button>
+    <button class="tab" data-v="stale">过期现状</button>
+    <button class="tab" data-v="proposed">待审候选</button>
+    <input type="search" id="q" placeholder="搜标题和正文">
+    <select id="type"><option value="">全部类型</option></select>
+    <select id="proj"><option value="">全部项目</option></select>
+    <select id="origin"><option value="">全部来源方式</option><option value="native">工具自己记的</option><option value="extract">从会话里抽的</option><option value="import">旧卡片拆分</option><option value="explicit">智能体主动写</option></select>
+    <button class="act warn" id="bulk">作废选中的</button>
+  </div>
+  <div id="list"></div>
+  <div style="text-align:center;margin:14px 0"><button class="act" id="more" hidden>再显示 100 条</button></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const TYPE = { preference: '偏好', feedback: '反馈', decision: '决定', status: '现状', pitfall: '坑', fact: '事实', reference: '参考' };
+const ORIGIN = { native: '工具自己记的', extract: '从会话里抽的', import: '旧卡片拆分', explicit: '智能体主动写' };
+let D = null; let view = 'all'; let shown = 100; const sel = new Set();
+const byId = () => new Map(D.entries.map((e) => [e.id, e]));
+const ago = (iso) => { const d = Math.floor((Date.now() - Date.parse(iso)) / 86400e3); return d < 1 ? '今天' : `${d} 天前`; };
+function toast(t) { $('toast').textContent = t; $('toast').classList.add('on'); setTimeout(() => $('toast').classList.remove('on'), 2200); }
+async function act(body) {
+  const r = await fetch('/browse/manage-action', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { toast(`失败：${j.error || r.status}`); return false; }
+  toast('已完成'); await load(); return true;
+}
+function card(e) {
+  const flags = [];
+  if (D.stale.includes(e.id)) flags.push('<span class="pill warn">现状 30 天没更新</span>');
+  if (e.state === 'proposed') flags.push('<span class="pill warn">待审</span>');
+  return `<div class="item" data-id="${esc(e.id)}"><div class="h"><input type="checkbox" ${sel.has(e.id) ? 'checked' : ''}><div style="flex:1"><div class="t">${esc(e.title)}</div>
+    <div class="m"><span class="pill type">${esc(TYPE[e.type] || e.type)}</span>${e.project ? `<span class="pill">${esc(e.project)}</span>` : ''}${flags.join('')}${esc(e.source)} · ${esc(ORIGIN[e.origin] || e.origin)} · 更新 ${esc(ago(e.updated))} · ${esc(e.id)}</div></div></div></div>`;
+}
+function expand(node, e) {
+  if (node.querySelector('.body')) { node.querySelectorAll('.body,.acts,.edit').forEach((x) => x.remove()); return; }
+  node.insertAdjacentHTML('beforeend', `<div class="body">${esc(e.body)}</div><div class="acts">
+    ${e.state === 'proposed' ? '<button class="act ok" data-a="approve">保留</button><button class="act warn" data-a="reject">不要</button>' : ''}
+    ${e.origin !== 'native' ? '<button class="act" data-a="edit">编辑</button>' : '<span class="pill">工具自己记的：要改请改那台机器上的源文件</span>'}
+    <button class="act warn" data-a="retire">作废</button></div>`);
+  node.querySelectorAll('.acts button').forEach((b) => { b.onclick = async (ev) => {
+    ev.stopPropagation();
+    const a = b.dataset.a;
+    if (a === 'approve' || a === 'reject') return act({ action: a, ids: [e.id] });
+    if (a === 'retire') { const reason = prompt(`作废「${e.title}」的原因：`, e.origin === 'native' ? '过时/重复（源文件改了会再出现）' : '过时/重复'); if (reason) act({ action: 'retire', ids: [e.id], reason }); return; }
+    if (a === 'edit') {
+      node.querySelector('.edit')?.remove();
+      node.insertAdjacentHTML('beforeend', `<div class="edit"><input value="${esc(e.title)}" data-f="title"><input value="${esc(e.project)}" data-f="project" placeholder="项目（英文短名）">
+        <textarea data-f="body">读取中…</textarea><div><button class="act ok" data-s disabled>保存</button></div></div>`);
+      fetch(`/browse/entry/${encodeURIComponent(e.id)}`).then((r) => r.text()).then((t) => {
+        const full = t.split('\n---\n').slice(1).join('\n---\n').trim();
+        if (!full) { toast('读不到全文，先别改'); return; }
+        node.querySelector('.edit textarea').value = full;
+        node.querySelector('[data-s]').disabled = false;
+      });
+      node.querySelector('[data-s]').onclick = (ev2) => { ev2.stopPropagation(); const f = (k) => node.querySelector(`[data-f=${k}]`).value; act({ action: 'edit', id: e.id, title: f('title'), project: f('project'), body: f('body') }); };
+      node.querySelectorAll('.edit input,.edit textarea').forEach((x) => { x.onclick = (z) => z.stopPropagation(); });
+    }
+  }; });
+}
+function render() {
+  const q = $('q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const t = $('type').value; const p = $('proj').value; const o = $('origin').value;
+  const ok = (e) => (!t || e.type === t) && (!p || e.project === p) && (!o || e.origin === o) && (!q.length || q.every((w) => `${e.title}\n${e.body}\n${e.project}`.toLowerCase().includes(w)));
+  const box = $('list');
+  if (view === 'dup') {
+    const m = byId();
+    const groups = D.duplicates.map((g) => g.map((id) => m.get(id)).filter(Boolean)).filter((g) => g.length > 1 && g.some(ok));
+    box.innerHTML = groups.length ? `<div class="sub" style="margin-bottom:8px">标题相似的条目分组（${groups.length} 组）。选一条保留，点"合并"：其余的标成"已被取代"并指向保留的那条（不会删除，随时能在浏览页看到）。</div>` + groups.slice(0, 80).map((g, gi) => `<div class="grp" data-g="${gi}">
+      ${g.map((e, k) => `<div class="row"><input type="radio" name="g${gi}" value="${esc(e.id)}" ${k === 0 ? 'checked' : ''}><div><div class="t">${esc(e.title)}</div><div class="m"><span class="pill type">${esc(TYPE[e.type] || e.type)}</span>${e.project ? `<span class="pill">${esc(e.project)}</span>` : ''}${esc(e.source)} · ${esc(ago(e.updated))} · ${esc(e.id)}</div><div class="bd">${esc(e.body)}</div></div></div>`).join('')}
+      <div style="margin-top:6px"><button class="act ok" data-merge="${gi}">合并（保留选中的）</button></div></div>`).join('') : '<div class="empty">没有疑似重复的</div>';
+    box.querySelectorAll('[data-merge]').forEach((b) => { b.onclick = () => {
+      const gi = Number(b.dataset.merge); const g = groups[gi]; const keep = box.querySelector(`input[name=g${gi}]:checked`).value;
+      act({ action: 'merge', ids: [keep, ...g.map((e) => e.id).filter((id) => id !== keep)] });
+    }; });
+    $('more').hidden = true;
+    return;
+  }
+  let list = D.entries.filter(ok);
+  if (view === 'stale') list = list.filter((e) => D.stale.includes(e.id));
+  if (view === 'proposed') list = list.filter((e) => e.state === 'proposed');
+  box.innerHTML = list.slice(0, shown).map(card).join('') || '<div class="empty">没有</div>';
+  $('more').hidden = list.length <= shown;
+  const m = byId();
+  box.querySelectorAll('.item').forEach((n) => {
+    const e = m.get(n.dataset.id);
+    n.querySelector('input[type=checkbox]').onclick = (ev) => { ev.stopPropagation(); if (ev.target.checked) sel.add(e.id); else sel.delete(e.id); $('bulk').textContent = `作废选中的（${sel.size}）`; };
+    n.querySelector('.h').onclick = () => expand(n, e);
+  });
+}
+async function load() {
+  D = await (await fetch('/browse/manage-data')).json();
+  const active = D.entries.filter((e) => e.state === 'active').length;
+  $('sum').textContent = `有效 ${active} 条 · 待审 ${D.proposed.length} 条 · 疑似重复 ${D.duplicates.length} 组 · 30 天没更新的现状 ${D.stale.length} 条。改动都记在 git 里，作废/合并的条目不会真删。`;
+  document.querySelector('[data-v=dup]').innerHTML = `疑似重复<b>${D.duplicates.length}</b>`;
+  document.querySelector('[data-v=stale]').innerHTML = `过期现状<b>${D.stale.length}</b>`;
+  document.querySelector('[data-v=proposed]').innerHTML = `待审候选<b>${D.proposed.length}</b>`;
+  const fill = (id, vals, lab) => { const cur = $(id).value; $(id).innerHTML = $(id).options[0].outerHTML + vals.map((v) => `<option value="${esc(v)}">${esc(lab ? lab(v) : v)}</option>`).join(''); $(id).value = cur; };
+  fill('type', Object.keys(TYPE), (k) => TYPE[k]);
+  fill('proj', [...new Set(D.entries.map((e) => e.project).filter(Boolean))].sort());
+  render();
+}
+document.querySelectorAll('.tab').forEach((b) => { b.onclick = () => { document.querySelectorAll('.tab').forEach((x) => x.classList.remove('on')); b.classList.add('on'); view = b.dataset.v; shown = 100; render(); }; });
+for (const id of ['q', 'type', 'proj', 'origin']) $(id).addEventListener(id === 'q' ? 'input' : 'change', () => { shown = 100; render(); });
+$('more').onclick = () => { shown += 100; render(); };
+$('bulk').onclick = () => { if (!sel.size) return toast('先勾选要作废的条目'); const reason = prompt(`作废选中的 ${sel.size} 条，原因：`, '过时/重复'); if (reason) act({ action: 'retire', ids: [...sel], reason }).then(() => sel.clear()); };
+load();
+</script>
+</body>
+</html>

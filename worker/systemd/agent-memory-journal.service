@@ -1,0 +1,7 @@
+[Unit]
+Description=agent-memory: write daily work journal from archived conversations
+
+[Service]
+Type=oneshot
+TimeoutStartSec=6h
+ExecStart=/usr/bin/node %h/agent-memory/worker/journal.mjs

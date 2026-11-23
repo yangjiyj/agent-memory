@@ -1,0 +1,19 @@
+{
+  "listen": "0.0.0.0",
+  "port": 8790,
+  "public_url": "http://hub.example:8790",
+  "repo": "/srv/agent-memory/repo",
+  "state": "/srv/agent-memory/state",
+  "tokens": "/srv/agent-memory/tokens.json",
+  "cards_dir": "/srv/agent-memory/cards",
+  "archive_dir": "/srv/agent-memory/archive",
+  "dist_dir": "/srv/agent-memory/dist",
+  "gate_secret": "",
+  "auto_register_deny": ["^customer-", "^family-"],
+  "auto_approve_days": 3,
+  "stale_hours": 3,
+  "digest_budget": 13800,
+  "embed_url": "",
+  "device_labels": { "my-laptop": "笔记本", "my-desktop": "台式机" },
+  "graph_entities": { "machine": ["my-laptop", "my-desktop", "build-server"], "site": [] }
+}

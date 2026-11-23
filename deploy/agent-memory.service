@@ -1,0 +1,20 @@
+# VM 内：/etc/systemd/system/agent-memory.service
+[Unit]
+Description=agent-memory hub (shared memory for agents)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=agentmem
+Environment=AGENT_MEMORY_CONFIG=/srv/agent-memory/config.json
+ExecStart=/usr/bin/node /srv/agent-memory/app/server.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/agent-memory
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

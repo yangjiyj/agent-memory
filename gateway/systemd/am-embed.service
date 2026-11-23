@@ -1,0 +1,17 @@
+# 本地向量服务（可选，给"按意思搜"用）：/etc/systemd/system/am-embed.service
+# 先：python3 -m venv /opt/am-embed/venv && /opt/am-embed/venv/bin/pip install fastembed
+[Unit]
+Description=agent-memory local embedding service
+After=network-online.target
+
+[Service]
+User=agentmem
+Environment=LISTEN=127.0.0.1:8791 EMBED_THREADS=8 EMBED_CACHE=/opt/am-embed/models
+# 国内下载模型可加：Environment=HF_ENDPOINT=https://hf-mirror.com
+ExecStart=/opt/am-embed/venv/bin/python /opt/am-embed/am-embed.py
+Restart=on-failure
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

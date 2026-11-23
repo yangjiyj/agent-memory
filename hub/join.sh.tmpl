@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# agent-memory 一键加入（macOS / Linux）。
+# 同一条命令有效期内可以在任意多台机器上用；设备名自动取主机名；重复运行不会重复登记。
+# 本机没有 Node 18+ 时，从记忆中心下载一份放到 ~/.agent-memory/node（不依赖外网）。
+set -euo pipefail
+
+main() {
+  local HUB='__HUB__' JOIN='__JOIN__'
+  local DIR="$HOME/.agent-memory" NODE="" c ver os arch
+  mkdir -p "$DIR"; chmod 700 "$DIR"
+
+  for c in "$(command -v node 2>/dev/null || true)" /opt/homebrew/bin/node /usr/local/bin/node "$HOME/.local/bin/node" "$DIR/node/bin/node"; do
+    if [ -n "$c" ] && [ -x "$c" ]; then
+      ver=$("$c" -e 'console.log(process.versions.node.split(".")[0])' 2>/dev/null || echo 0)
+      if [ "$ver" -ge 18 ] 2>/dev/null; then NODE="$c"; break; fi
+    fi
+  done
+  if [ -z "$NODE" ]; then
+    case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; *) echo "不支持的系统：$(uname -s)"; exit 1 ;; esac
+    case "$(uname -m)" in x86_64|amd64) arch=x64 ;; arm64|aarch64) arch=arm64 ;; *) echo "不支持的 CPU：$(uname -m)"; exit 1 ;; esac
+    echo "本机没有可用的 Node（需要 18 以上），从记忆中心下载一份到 $DIR/node …"
+    rm -rf "$DIR/node" "$DIR/node.tmp"; mkdir -p "$DIR/node.tmp"
+    curl -fsSL "$JOIN/node/$os-$arch" | tar -xz -C "$DIR/node.tmp" --strip-components=1
+    mv "$DIR/node.tmp" "$DIR/node"
+    NODE="$DIR/node/bin/node"
+    if ! "$NODE" --version >/dev/null 2>&1; then
+      echo "下载的 Node 在这台机器上跑不起来（多半是系统太老，glibc 低于 2.28）。先装个 Node 18+ 再运行这条命令。"
+      exit 1
+    fi
+  fi
+
+  cat > "$DIR/kb-agent.mjs" <<'KB_AGENT_SOURCE_EOF'
+__AGENT_SOURCE__
+KB_AGENT_SOURCE_EOF
+
+  "$NODE" "$DIR/kb-agent.mjs" join "$JOIN"
+  "$NODE" "$DIR/kb-agent.mjs" setup
+  "$NODE" "$DIR/kb-agent.mjs" schedule
+  "$NODE" "$DIR/kb-agent.mjs" sync || echo "首次同步没成功，定时任务会自动重试；日志在 $DIR/agent.log"
+  echo "装好了：每 10 分钟自动同步。新开的智能体会话里会有 agent-memory 工具。"
+}
+
+main "$@"

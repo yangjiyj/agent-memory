@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+# 运行时数据不要提交
+state/
+repo/
+archive/
+tokens.json
+config.json

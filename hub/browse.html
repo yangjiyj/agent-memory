@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>共享记忆</title>
+<style>
+  :root { --ink:#1d2433; --muted:#5b6475; --line:#d8dde6; --bg:#f5f6f8; --acc:#2f6fde; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.55 -apple-system,"PingFang SC","Microsoft YaHei","Segoe UI",sans-serif; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:14px 20px; position:sticky; top:0; z-index:2; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  h1 { font-size:18px; margin:0 12px 0 0; }
+  .muted { color:var(--muted); font-size:12.5px; }
+  select, input { font:inherit; font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  input[type=search] { min-width:220px; flex:1; }
+  main { max-width:1100px; margin:0 auto; padding:14px 20px 40px; }
+  .panels { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:14px; }
+  .panel { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .panel .t { font-weight:600; margin-bottom:6px; }
+  .bar { display:flex; align-items:center; gap:6px; font-size:12.5px; margin:3px 0; cursor:pointer; }
+  .bar:hover .lab { color:var(--acc); }
+  .bar .lab { width:46%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar .b { height:8px; background:#cfdcf6; border-radius:4px; }
+  .bar .n { color:var(--muted); min-width:34px; text-align:right; }
+  .where { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:13px; }
+  .where summary { cursor:pointer; font-weight:600; }
+  .where li { margin:3px 0; }
+  .item { background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; }
+  .item .head { cursor:pointer; }
+  .item .title { font-weight:600; }
+  .tag { display:inline-block; font-size:11.5px; border:1px solid var(--line); border-radius:9px; padding:0 7px; margin-right:5px; color:var(--ink); background:#fafbfc; }
+  .tag.type { background:#eef3fd; border-color:#cdd9f3; }
+  .tag.st { background:#fdf1e5; border-color:#f1d4b3; }
+  .body { white-space:pre-wrap; font-size:13px; margin-top:8px; border-top:1px dashed var(--line); padding-top:8px; }
+  .more { text-align:center; margin:14px 0; }
+  button { font:inherit; font-size:13px; padding:6px 16px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  @media (max-width:860px) { .panels { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>共享记忆</h1>
+    <span class="muted" id="sum"></span>
+    <a href="/browse/viz" style="margin-left:auto;font-size:13px;color:#2f6fde;text-decoration:none">工作宇宙（可视化）→</a>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <input type="search" id="q" placeholder="搜索标题和正文，空格分隔多个词">
+    <select id="f-src"><option value="">全部来源</option></select>
+    <select id="f-origin"><option value="">全部方式</option></select>
+    <select id="f-type"><option value="">全部类型</option></select>
+    <select id="f-proj"><option value="">全部项目</option></select>
+    <select id="f-state"><option value="active">有效的</option><option value="proposed">待审候选</option><option value="superseded">已被取代</option><option value="retired">已作废</option><option value="">全部状态</option></select>
+  </div>
+</header>
+<main>
+  <details class="where">
+    <summary>这些记忆存在哪、从哪来（点开）</summary>
+    <ul>
+      <li><b>正本</b>：中心服务器，目录 <code>/srv/agent-memory/repo/entries/</code>，一条一个 markdown 文件，git 记着每次改动。</li>
+      <li><b>备份</b>：设备端的 backup 目标每天拉一份完整仓库（git bundle，含全部历史）；也可以在别的机器上定时 <code>git clone --mirror</code>。</li>
+      <li><b>每台机器的离线副本</b>：<code>~/.agent-memory/snapshot.json</code>，中心连不上时智能体查这个。</li>
+      <li><b>给你看的</b>：本页、大屏；装了 vault 目标的机器上用 Obsidian 打开 <code>~/Documents/共享记忆</code>。</li>
+      <li><b>来源方式</b>：工具自己记的 = Claude/Hermes/OpenClaw/WorkBuddy 自带的记忆文件原样同步；会话抽取 = 从 Codex 会话里由模型抽出（候选 3 天不审自动生效）；旧卡片拆分 = 11-13 从旧知识库大卡拆的；智能体主动写 = 调 memory_remember 写的。</li>
+      <li>原始的记忆文件仍在各自机器上（如 Mac 的 <code>~/.claude/projects/*/memory/</code>）；改那里，这边跟着变。</li>
+    </ul>
+  </details>
+  <div class="panels">
+    <div class="panel"><div class="t">按来源（机器/工具）</div><div id="p-src"></div></div>
+    <div class="panel"><div class="t">按类型</div><div id="p-type"></div></div>
+    <div class="panel"><div class="t">按项目</div><div id="p-proj"></div></div>
+  </div>
+  <div id="list"></div>
+  <div class="more"><button id="more" hidden>再显示 100 条</button></div>
+</main>
+<script>
+const TYPE = { preference:'偏好', feedback:'反馈', decision:'决定', status:'现状', pitfall:'坑', fact:'事实', reference:'参考' };
+const ORIGIN = { native:'工具自己记的', extract:'会话抽取', import:'旧卡片拆分', explicit:'智能体主动写' };
+const STATE = { active:'有效', proposed:'待审候选', superseded:'已被取代', retired:'已作废' };
+let ALL = [], shown = 100;
+const $ = (id) => document.getElementById(id);
+const src = (e) => `${e.author}/${e.client}`;
+function count(list, key) { const m = new Map(); for (const e of list) { const k = key(e) || '（无）'; m.set(k, (m.get(k) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); }
+function fill(sel, pairs, label) { for (const [k, n] of pairs) { const o = document.createElement('option'); o.value = k; o.textContent = `${label ? label(k) : k}（${n}）`; sel.appendChild(o); } }
+function bars(el, pairs, label, onPick) {
+  el.innerHTML = ''; const max = pairs[0]?.[1] || 1;
+  for (const [k, n] of pairs.slice(0, 12)) {
+    const d = document.createElement('div'); d.className = 'bar';
+    d.innerHTML = '<span class="lab"></span><span class="b"></span><span class="n"></span>';
+    d.querySelector('.lab').textContent = label ? label(k) : k;
+    d.querySelector('.b').style.width = `${Math.max(4, 120 * n / max)}px`;
+    d.querySelector('.n').textContent = n;
+    d.onclick = () => onPick(k); el.appendChild(d);
+  }
+}
+function filtered() {
+  const q = $('q').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const [s, o, t, p, st] = ['f-src', 'f-origin', 'f-type', 'f-proj', 'f-state'].map((id) => $(id).value);
+  return ALL.filter((e) => (!st || e.state === st) && (!s || src(e) === s) && (!o || e.origin === o) && (!t || e.type === t)
+    && (!p || (e.project || '（无）') === p) && (!q.length || q.every((w) => e.hay.includes(w))));
+}
+function render() {
+  const list = filtered();
+  $('sum').textContent = `显示 ${Math.min(shown, list.length)} / 筛出 ${list.length} 条（共 ${ALL.length} 条，其中有效 ${ALL.filter((e) => e.state === 'active').length} 条）`;
+  const pick = (id) => (k) => { $(id).value = k; shown = 100; render(); };
+  bars($('p-src'), count(list, src), null, pick('f-src'));
+  bars($('p-type'), count(list, (e) => e.type), (k) => TYPE[k] || k, pick('f-type'));
+  bars($('p-proj'), count(list, (e) => e.project), null, pick('f-proj'));
+  const box = $('list'); box.innerHTML = '';
+  for (const e of list.slice(0, shown)) {
+    const d = document.createElement('div'); d.className = 'item';
+    d.innerHTML = '<div class="head"><div class="title"></div><div class="meta"></div></div>';
+    d.querySelector('.title').textContent = e.title;
+    const meta = d.querySelector('.meta');
+    const add = (txt, cls) => { const s = document.createElement('span'); s.className = `tag ${cls || ''}`; s.textContent = txt; meta.appendChild(s); };
+    add(TYPE[e.type] || e.type, 'type');
+    if (e.state !== 'active') add(STATE[e.state] || e.state, 'st');
+    if (e.project) add(e.project);
+    add(src(e)); add(ORIGIN[e.origin] || e.origin); add(String(e.updated).slice(0, 10));
+    d.querySelector('.head').onclick = async () => {
+      const old = d.querySelector('.body'); if (old) { old.remove(); return; }
+      const b = document.createElement('div'); b.className = 'body'; b.textContent = '读取中…'; d.appendChild(b);
+      const r = await fetch(`/browse/entry/${encodeURIComponent(e.id)}`); b.textContent = r.ok ? await r.text() : `读取失败（${r.status}）`;
+    };
+    box.appendChild(d);
+  }
+  $('more').hidden = list.length <= shown;
+}
+$('more').onclick = () => { shown += 100; render(); };
+for (const id of ['q', 'f-src', 'f-origin', 'f-type', 'f-proj', 'f-state']) $(id).addEventListener(id === 'q' ? 'input' : 'change', () => { shown = 100; render(); });
+fetch('/browse/data').then((r) => r.json()).then((d) => {
+  ALL = d.entries.map((e) => ({ ...e, hay: `${e.title}\n${e.subject}\n${e.project}\n${(e.tags || []).join(' ')}\n${e.snippet}`.toLowerCase() }));
+  const act = ALL.filter((e) => e.state === 'active');
+  fill($('f-src'), count(act, src)); fill($('f-origin'), count(act, (e) => e.origin), (k) => ORIGIN[k] || k);
+  fill($('f-type'), count(act, (e) => e.type), (k) => TYPE[k] || k); fill($('f-proj'), count(act, (e) => e.project));
+  render();
+});
+</script>
+</body>
+</html>
