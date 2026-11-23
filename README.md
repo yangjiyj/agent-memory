@@ -4,6 +4,10 @@
 
 [English](README.en.md)
 
+> **English summary** — *One shared memory for every AI coding agent on every machine, and a record of what you did on which day.*
+> agent-memory is a small self-hosted hub (Node.js ≥ 18, zero dependencies, data is plain markdown in git). It syncs each agent's own memory files, serves them to all agents over MCP, archives conversations, writes a daily work journal, and comes with a web console: live topology with 24-hour replay, usage insights, global search and "ask your memories", read-only share links, light/dark theme and an English interface.
+> Try it with fictional demo data in one command: `docker compose --profile demo up`, then open http://127.0.0.1:8790/ · **[Full English README →](README.en.md)** · [Changelog](CHANGELOG.md)
+
 ![概览：工作星系和实时作战室](docs/screenshots/overview.jpg)
 
 你在台式机上用 Claude Code、笔记本上用 Codex、服务器上跑着 Hermes / OpenClaw、偶尔开 WorkBuddy……每个智能体各记各的，换个工具、换台机器就什么都不知道了。agent-memory 是一个自己部署的小服务，把它们接到一起：
