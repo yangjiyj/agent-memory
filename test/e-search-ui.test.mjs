@@ -66,7 +66,8 @@ describe('全局搜索前端：资源', () => {
   after(() => hub.stop());
 
   it('console.html 引入样式和脚本；样式、脚本都能取到（带身份）', async () => {
-    const html = (await hub.web('GET', '/console')).text;
+    // 服务端会把相邻的样式、脚本合成带哈希的包，所以引用关系看源文件，单个文件仍能单独取到
+    const html = fs.readFileSync(path.join(HUB, 'console.html'), 'utf8');
     assert.match(html, /href="\/console\/console-search\.css"/);
     assert.match(html, /src="\/console\/console-search\.js"/);
     for (const f of ['console-search.css', 'console-search.js']) {
