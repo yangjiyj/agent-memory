@@ -10,18 +10,19 @@
   let cv; let g; let raf = 0; let loaded = false; let loadedAt = 0;
   const dpr = () => devicePixelRatio || 1;
   const kindColor = (n) => {
-    if (n.kind === 'project') { const c = colorOf(n.name); return c === Console.OTHER || c === Console.UNWRITTEN ? '#8b93a8' : c; }
-    return n.kind === 'machine' ? '#6da7ec' : n.kind === 'site' ? '#ec835a' : '#b9b0f5';
+    if (n.kind === 'project') { const c = colorOf(n.name); return c === Console.OTHER || c === Console.UNWRITTEN ? Console.css('--other-lt') : c; }
+    return Console.css(`--kind-${n.kind}`); // machine / site / version
   };
+  const kindLegend = () => $('kgLegend').innerHTML = ['project', 'machine', 'site', 'version'].filter((k) => KG.nodes.some((n) => n.kind === k))
+    .map((k) => `<span><b style="background:${Console.css(`--kind-${k}`)}"></b>${KIND[k]} ${KG.nodes.filter((n) => n.kind === k).length}</span>`).join('');
 
   async function load() {
     const g0 = await Console.api('/browse/graph');
-    $('kgLegend').innerHTML = ['project', 'machine', 'site', 'version'].filter((k) => g0.nodes.some((n) => n.kind === k))
-      .map((k) => `<span><b style="background:${k === 'project' ? '#3987e5' : k === 'machine' ? '#6da7ec' : k === 'site' ? '#ec835a' : '#b9b0f5'}"></b>${KIND[k]} ${g0.nodes.filter((n) => n.kind === k).length}</span>`).join('');
     const idx = new Map(g0.nodes.map((n, i) => [n.id, i]));
     KG.nodes = g0.nodes.map((n) => ({ ...n, x: (Math.random() - 0.5) * 400, y: (Math.random() - 0.5) * 300, vx: 0, vy: 0, r: 3 + Math.sqrt(n.count) * 0.6, c: kindColor(n) }));
     KG.edges = g0.edges.map((e) => ({ a: idx.get(e.a), b: idx.get(e.b), w: e.w })).filter((e) => e.a !== undefined && e.b !== undefined);
     KG.maxW = Math.max(...KG.edges.map((e) => e.w), 1);
+    kindLegend();
     KG.alpha = 1; KG.sel = -1; KG.hover = -1;
     $('kgSide').textContent = HINT;
     for (let i = 0; i < 250; i++) step();
@@ -55,11 +56,11 @@
     const nb = new Set(); if (sel >= 0) for (const e of KG.edges) { if (e.a === sel) nb.add(e.b); if (e.b === sel) nb.add(e.a); }
     for (const e of KG.edges) {
       const a = KG.nodes[e.a]; const b = KG.nodes[e.b]; const on = sel >= 0 && (e.a === sel || e.b === sel);
-      g.strokeStyle = on ? 'rgba(232,236,246,.55)' : sel >= 0 ? 'rgba(148,163,184,.05)' : `rgba(148,163,184,${0.06 + 0.22 * e.w / KG.maxW})`;
+      g.strokeStyle = on ? Console.rgba('--text-rgb', 0.55) : sel >= 0 ? Console.rgba('--slate-rgb', 0.05) : Console.rgba('--slate-rgb', 0.06 + 0.22 * e.w / KG.maxW);
       g.lineWidth = (on ? 1.6 : 0.6 + 1.6 * e.w / KG.maxW) * d;
       g.beginPath(); g.moveTo(cx + a.x * d, cy + a.y * d); g.lineTo(cx + b.x * d, cy + b.y * d); g.stroke();
     }
-    g.globalCompositeOperation = 'lighter';
+    g.globalCompositeOperation = Console.theme?.resolved() === 'light' ? 'source-over' : 'lighter'; // 浅底上不能叠加
     KG.nodes.forEach((n, i) => {
       const dim = sel >= 0 && i !== sel && !nb.has(i);
       const x = cx + n.x * d; const y = cy + n.y * d; const r = n.r * d * (i === sel ? 1.4 : 1);
@@ -72,7 +73,7 @@
     KG.nodes.forEach((n, i) => {
       const dim = sel >= 0 && i !== sel && !nb.has(i);
       if (dim || (n.kind === 'version' && i !== sel && !nb.has(i)) || (n.count < 6 && i !== sel && !nb.has(i) && sel < 0)) return;
-      g.fillStyle = 'rgba(232,236,246,.9)'; g.fillText(n.name, cx + n.x * d, cy + n.y * d - n.r * d - 4 * d);
+      g.fillStyle = Console.rgba('--text-rgb', 0.9); g.fillText(n.name, cx + n.x * d, cy + n.y * d - n.r * d - 4 * d);
     });
   }
 
@@ -119,5 +120,6 @@
     },
     hide() { cancelAnimationFrame(raf); raf = 0; KG.hover = -1; tip.hide(); },
     resize() { fit(); },
+    theme() { KG.nodes.forEach((n) => { n.c = kindColor(n); }); if (KG.nodes.length) kindLegend(); },
   });
 })();
