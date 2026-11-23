@@ -87,7 +87,7 @@ export function createCards(rootDir) {
     ].join('\n');
   }
 
-  function search(args) {
+  function search(args, stat) {
     const q = String(args.query ?? '').trim().toLowerCase();
     if (!q) throw new Error('缺少 query');
     const ts = q.split(/\s+/).filter(Boolean);
@@ -116,6 +116,7 @@ export function createCards(rootDir) {
     }
     scored.sort((a, b) => (a.sameLine !== b.sameLine ? (a.sameLine ? -1 : 1) : b.count - a.count));
     const picked = scored.slice(0, limit);
+    if (stat) stat.hits = scored.length;
     if (!picked.length) return `没有卡片同时包含：${ts.join(' / ')}。换更少、更短的关键词，或先 kb_map 看卡片列表。`;
     const out = [`# 卡片搜索「${q}」：${scored.length} 张命中，显示 ${picked.length} 张`, ''];
     for (const it of picked) {

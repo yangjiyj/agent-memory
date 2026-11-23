@@ -22,6 +22,7 @@ import fs from 'node:fs';
 // [B] import 位
 //
 // [C] import 位
+import { createInsight } from './admin-insight.mjs';
 //
 // [D] import 位
 //
@@ -200,13 +201,26 @@ export function createAdmin(ctx) {
   // ---- mcp ----
   const disabledList = () => (Array.isArray(CFG.disabled_tools) ? CFG.disabled_tools : []);
 
+  // 近 7 天的耗时（毫秒）和失败率。分位数用最近秩法：排好序取第 ceil(p×n) 个；失败率的分母只算带 dur 的新记录，没有就是 null
+  const rank = (sorted, p) => sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
+  function latency(s) {
+    const d = (s?.dur || []).slice().sort((a, b) => a - b);
+    return {
+      timed_7d: d.length, p50_ms: d.length ? rank(d, 0.5) : null, p95_ms: d.length ? rank(d, 0.95) : null,
+      judged_7d: d.length, errors_7d: s?.errs || 0, err_rate: d.length ? s.errs / d.length : null,
+    };
+  }
+
   function mcp() {
     const all = readJsonl(usageFile(), 0).filter((u) => u.op.startsWith('tool:'));
     const since = Date.now() - 7 * DAY;
     const stat = {};
     for (const u of all) {
-      const s = (stat[u.op.slice(5)] ||= { calls: 0, last: null });
-      if (Date.parse(u.t) >= since) s.calls++;
+      const s = (stat[u.op.slice(5)] ||= { calls: 0, last: null, dur: [], errs: 0 });
+      if (Date.parse(u.t) >= since) {
+        s.calls++;
+        if (Number.isFinite(u.dur)) { s.dur.push(u.dur); if (u.err) s.errs++; } // 带 dur 的新记录才有耗时，也才知道成没成功
+      }
       if (!s.last || u.t > s.last) s.last = u.t;
     }
     const off = new Set(disabledList());
@@ -216,6 +230,7 @@ export function createAdmin(ctx) {
       tools: tools().map((t) => ({
         name: t.name, description: t.description || '', kind: WRITE_TOOLS.has(t.name) ? 'write' : 'read',
         calls_7d: stat[t.name]?.calls || 0, last_call: stat[t.name]?.last || null, disabled: off.has(t.name),
+        ...latency(stat[t.name]),
       })),
     };
   }
@@ -535,6 +550,7 @@ export function createAdmin(ctx) {
     // [B] 扩展位
     //
     // [C] 扩展位
+    createInsight(ctx, kit),
     //
     // [D] 扩展位
     //

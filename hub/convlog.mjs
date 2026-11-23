@@ -301,7 +301,7 @@ export function createConvLog(ctx) {
     return out.sort((a, b) => String(a.first).localeCompare(String(b.first)));
   }
 
-  function timeline(args = {}) {
+  function timeline(args = {}, stat) {
     const days = Math.min(Math.max(parseInt(args.days, 10) || 7, 1), 400);
     const to = parseDate(args.to || args.date, today());
     const from = parseDate(args.from || args.date, localDay(new Date(Date.parse(`${to}T12:00:00+08:00`) - (days - 1) * 86400e3).toISOString()));
@@ -337,6 +337,7 @@ export function createConvLog(ctx) {
       if (lines.join('\n').length + text.length > 14000) { truncated = true; break; }
       lines.push(text);
     }
+    if (stat && words.length) stat.hits = segs; // 只有带关键词时才算"搜"，按日期翻时间线没有命中的概念
     if (!lines.length) return `${from} 到 ${to} 没有找到${proj || words.length || dev || tool ? '符合条件的' : ''}对话记录。（只收录接入以后的对话，更早的可以用导入脚本补。）`;
     return [
       `${from} 到 ${to}${proj ? `，项目 ${proj}` : ''}${dev ? `，设备 ${dev}` : ''}${tool ? `，工具 ${tool}` : ''}${words.length ? `，含「${words.join(' ')}」` : ''}：共 ${segs} 段会话（按天倒序；ref 可交给 conversation_get 读原文）`,
@@ -420,8 +421,9 @@ export function createConvLog(ctx) {
     };
   }
 
-  function search(args = {}) {
+  function search(args = {}, stat) {
     const r = searchData(args);
+    if (stat) { if (r.error) stat.err = true; else stat.hits = r.total; } // stat：调用方想知道命中几个会话、有没有出错时传进来
     if (r.error) return r.error;
     if (!r.total) return `原始对话里没搜到「${r.words.join(' ')}」。`;
     const lines = [`在 ${r.total} 个会话里搜到「${r.words.join(' ')}」${r.total > r.limit ? `，列出最近的 ${r.limit} 个` : ''}（用 conversation_get 加 ref 和日期读上下文）：`];

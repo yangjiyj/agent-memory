@@ -301,6 +301,15 @@
   (function mcp() {
     let root = null; let data = null; let filter = 'all';
     const open = new Set();
+    // 耗时和失败率只统计带 dur 的新记录；没有就显示 —
+    const fmtMs = (ms) => (ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`);
+    const durCell = (t) => (t.timed_7d ? `<span class="${t.p95_ms >= 3000 ? 'ins-slow' : ''}" title="近 7 天 ${fmtN(t.timed_7d)} 次调用">${fmtMs(t.p50_ms)} / ${fmtMs(t.p95_ms)}</span>` : '<span class="muted">—</span>');
+    const errCell = (t) => {
+      if (t.err_rate === null || t.err_rate === undefined) return '<span class="muted">—</span>';
+      const txt = `${(t.err_rate * 100).toFixed(t.err_rate && t.err_rate < 0.1 ? 1 : 0)}%`;
+      const tip = `近 7 天 ${fmtN(t.errors_7d)} / ${fmtN(t.judged_7d)} 次失败`;
+      return t.err_rate >= 0.05 ? `<span class="pill bad" title="${tip}">${txt}</span>` : `<span title="${tip}">${txt}</span>`;
+    };
 
     function render() {
       if (!data) return;
@@ -315,11 +324,12 @@
         <td><div class="adm-desc" title="${h(t.description)}">${h(t.description)}</div></td>
         <td>${t.kind === 'write' ? '<span class="pill warn">写</span>' : '<span class="pill adm-blue">读</span>'}</td>
         <td><div class="adm-use"><b>${fmtN(t.calls_7d)}</b><div class="tr">${t.calls_7d ? `<i class="${t.kind === 'write' ? 'w' : ''}" style="width:${Math.max(4, Math.round((t.calls_7d / max) * 100))}%"></i>` : ''}</div></div></td>
+        <td class="num" style="white-space:nowrap">${durCell(t)}</td><td class="num" style="white-space:nowrap">${errCell(t)}</td>
         <td class="muted" style="white-space:nowrap">${t.last_call ? timeTag(t.last_call) : '—'}</td>
         <td>${switchBtn('', !t.disabled, `启用 ${t.name}`)}</td></tr>`).join('');
       root.querySelector('.adm-mcp').innerHTML = `<div class="adm-addrs">${addr('HTTP', data.http)}${addr('stdio', data.stdio)}</div>
         <section class="panel"><div class="ph"><h2>工具</h2><div class="chips" style="margin:0">${[['all', '全部'], ['read', '读'], ['write', '写']].map(([k, l]) => `<button type="button" data-f="${k}" class="${filter === k ? 'on' : ''}">${l} ${cnt[k]}</button>`).join('')}</div></div>
-        <div class="adm-wrap">${shown.length ? `<table class="adm-tbl"><tr><th>工具</th><th>用途</th><th></th><th class="num">7 天调用</th><th>最近一次</th><th>启用</th></tr>${rows}</table>` : '<div class="empty">没有工具</div>'}</div></section>`;
+        <div class="adm-wrap">${shown.length ? `<table class="adm-tbl"><tr><th>工具</th><th>用途</th><th></th><th class="num">7 天调用</th><th class="num">耗时 中位 / 95 分位</th><th class="num">失败率</th><th>最近一次</th><th>启用</th></tr>${rows}</table>` : '<div class="empty">没有工具</div>'}</div></section>`;
     }
 
     async function load() { data = await api(`${A}mcp`); render(); }
