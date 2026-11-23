@@ -1013,6 +1013,10 @@ async function main() {
   for (const ago of [3, 21, 44, 95, 170]) usage.push({ t: iso(NOW - ago * MIN), device: 'journal-bot', client: 'unknown', op: ago % 2 ? 'extract:journal' : 'extract:session' });
   for (const [ago, op] of [[7 * 60, 'report:report'], [31 * 60, 'report:weekly']]) usage.push({ t: iso(NOW - ago * MIN), device: 'daily-report', client: 'unknown', op });
   usage.push({ t: iso(NOW - 52 * MIN), device: 'desktop', client: 'console', op: 'console:device-set', d: 'work-mac readonly' }, { t: iso(NOW - 3 * 3600e3), device: 'desktop', client: 'console', op: 'manage:approve', d: 'c-demo' });
+  // 近一周里个别工具的失败率要稳定偏高，不能靠随机：这两个工具近 6 天的调用，每 8 次里固定有 1 次失败
+  for (const op of ['tool:memory_update', 'tool:kb_search']) {
+    usage.filter((u) => u.op === op && Date.parse(u.t) >= NOW - 6 * DAY).sort((a, b) => a.t.localeCompare(b.t)).forEach((u, i) => { if (i % 8 === 3) { u.err = 1; delete u.hits; delete u.ids; } });
+  }
   const merged = [...usage, ...existing].sort((a, b) => a.t.localeCompare(b.t));
   fs.writeFileSync(usagePath, `${merged.map((u) => JSON.stringify(u)).join('\n')}\n`);
   // 带新字段的记录从 36 天前起算（冷记忆栏要写明这个日期，别冒充成"从没用过"）

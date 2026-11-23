@@ -95,7 +95,10 @@ describe('访问控制：隐藏项目（控制台和 /browse）', () => {
     const data = (await as(SCOPED, '/browse/data')).text;
     for (const m of ['visible-title-V1', 'visible-status-V2', 'noproj-pref-N1']) assert.ok(data.includes(m), `/browse/data 应有 ${m}`);
     const day = (await as(SCOPED, `/browse/viz-day?date=${S.days.SV}`)).text;
-    assert.ok(day.includes('journal-visible-J2') && day.includes('journal-noproj-J3'));
+    assert.ok(day.includes('journal-visible-J2'));
+    // 没项目的会话和普通项目的会话不一定在同一个自然日（午夜前后跑测试时会分开），各看各的那天
+    const dayN = (await as(SCOPED, `/browse/viz-day?date=${S.days.SN}`)).text;
+    assert.ok(dayN.includes('journal-noproj-J3'));
     const h = (await as(SCOPED, `/browse/handoff?project=${VISIBLE}`)).text;
     assert.ok(h.includes('visible-title-V1') && h.includes('journal-visible-J2') && h.includes('noproj-pref-N1'));
     const live = (await as(SCOPED, '/browse/viz-live')).json;
