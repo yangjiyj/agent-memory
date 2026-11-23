@@ -874,6 +874,8 @@ async function main() {
     const reasons = ['项目已下线，不再适用', '被新的方案取代', '信息已过时，实际配置已经改了', '重复记录，保留另一条', '临时结论，已验证不成立', '涉及的模块已重构'];
     for (const [i, e] of retireIds.entries()) await call('POST', '/browse/manage-action', { body: { action: 'retire', ids: [e.id], reason: reasons[i % reasons.length] } });
     await call('POST', '/console/api/devices/work-mac', { body: { readonly: true, hide_projects: ['billing'] } });
+    // 设备分组：三个组，拓扑页同组挨在一起、可折叠；设备页可按组筛选
+    for (const [name, group] of [['desktop', '办公室'], ['work-mac', '办公室'], ['laptop', '家里'], ['home-nas', '家里'], ['build-server', '机房'], ['lab-vm', '机房']]) await call('POST', `/console/api/devices/${name}`, { body: { group } });
 
     // 取回条目清单，给调用记录和改日期用
     const all = await call('GET', '/browse/data');

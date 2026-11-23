@@ -544,7 +544,7 @@ describe('控制台接口：拓扑的实时数据', () => {
       assert.equal(codex.up_24h, 6 + 1);
       assert.equal(codex.down_24h, 3);
       assert.equal(d.agents.find((a) => a.tool === 'claude-code').up_24h, 0);
-      assert.deepEqual(t.devices.find((x) => x.name === 'my-laptop').flow, { up_24h: 0, down_24h: 0, hours: Array(24).fill(0) });
+      assert.deepEqual(t.devices.find((x) => x.name === 'my-laptop').flow, { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), hours_down: Array(24).fill(0) });
       assert.equal(t.hub.up_24h, 7);
       assert.equal(t.hub.down_24h, 3);
     } finally { await hub.stop(); }

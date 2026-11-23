@@ -866,22 +866,27 @@ function newJoinCode(days = 7, base = CFG.public_url) {
 }
 
 // 改设备的巡检和权限参数（命令行 device-set 和控制台接口共用）。changes 里没出现的键不动；
-// stale_hours 给数字、paused/readonly 给 true、hide_projects 给非空数组是设置，其余（null、false、空数组）是清除
+// stale_hours 给数字、paused/readonly 给 true、hide_projects 给非空数组、group 给非空字符串（最多 20 个字）是设置，其余（null、false、空数组、空串）是清除
 function deviceSet(name, changes) {
   const tokens = loadTokens();
   const d = tokens.devices?.[name];
   if (!d) throw new UserError(`没有设备 ${name}`);
-  for (const k of Object.keys(changes)) if (!['stale_hours', 'paused', 'readonly', 'hide_projects'].includes(k)) throw new UserError(`不认识的参数 ${k}`);
+  for (const k of Object.keys(changes)) if (!['stale_hours', 'paused', 'readonly', 'hide_projects', 'group'].includes(k)) throw new UserError(`不认识的参数 ${k}`);
   for (const [k, v] of Object.entries(changes)) {
     if (k === 'hide_projects') { if (v?.length) d.hide_projects = v; else delete d.hide_projects; }
     else if (k === 'stale_hours') { if (v) d.stale_hours = v; else delete d.stale_hours; }
+    else if (k === 'group') {
+      const g = typeof v === 'string' ? v.trim() : '';
+      if ([...g].length > 20 || [...g].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) throw new UserError('分组名最多 20 个字，不能有换行');
+      if (g) d.group = g; else delete d.group;
+    }
     else if (v === true) d[k] = true;
     else delete d[k];
   }
   const tmp = `${CFG.tokens}.tmp-${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(tokens, null, 1), { mode: 0o600 });
   fs.renameSync(tmp, CFG.tokens);
-  return { stale_hours: d.stale_hours || null, paused: Boolean(d.paused), readonly: Boolean(d.readonly), hide_projects: d.hide_projects || [] };
+  return { stale_hours: d.stale_hours || null, paused: Boolean(d.paused), readonly: Boolean(d.readonly), hide_projects: d.hide_projects || [], ...(d.group ? { group: d.group } : {}) };
 }
 
 function heartbeat(payload, who) {
@@ -1945,13 +1950,16 @@ else if (cliCmd === 'invite') {
   const j = newJoinCode(days);
   process.stdout.write(`${days ? `${days} 天内有效` : '长期有效'}，可以在任意多台机器上用：\nmacOS / Linux：${j.sh}\nWindows PowerShell：${j.ps1}\n说明页：${j.page}\n`);
 } else if (cliCmd === 'device-set') {
-  // 设巡检参数：device-set mac stale_hours=48 / device-set 某机 paused=true（停用、不告警）
+  // 设巡检参数：device-set mac stale_hours=48 / device-set 某机 paused=true（停用、不告警）/ device-set 某机 group=办公室（group= 清掉分组）
   const changes = {};
   for (const kv of process.argv.slice(4)) {
-    const [k, v] = kv.split('=');
+    const eq = kv.indexOf('=');
+    const k = eq < 0 ? kv : kv.slice(0, eq);
+    const v = eq < 0 ? undefined : kv.slice(eq + 1);
     if (k === 'stale_hours') changes[k] = Math.max(1, parseInt(v, 10) || 3);
     else if (k === 'paused' || k === 'readonly') changes[k] = v === 'true';
     else if (k === 'hide_projects') changes[k] = v ? v.split(',').map((x) => x.trim()).filter(Boolean) : null;
+    else if (k === 'group') changes[k] = v || null;
     else changes[k] = undefined; // 不认识的参数，交给 deviceSet 报错
   }
   try {

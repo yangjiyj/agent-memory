@@ -116,16 +116,36 @@ body.embed .tp-panel { border: 0; border-radius: 0; background: none; box-shadow
 .tp-n .r1 em + .tp-fl { margin-left: 6px; }
 .tp-n .r1 b { flex: 0 1 auto; }
 
-/* 设备：24 格心跳条贴着节点底边 */
-.tp-dev { padding: 4px 12px 6px; display: flex; flex-direction: column; justify-content: center; }
-.tp-dev .r1 { line-height: 16px; }
-.tp-dev .r2 { min-height: 15px; margin-top: 3px; }
-.tp-dev .tp-tg { line-height: 14px; }
-.tp-hb { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 3px; display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
-.tp-hb i { display: block; border-radius: 1px; background: rgb(var(--tp-up)); box-shadow: 0 0 4px rgba(var(--tp-up), .6); }
+/* 设备和折叠的组：24 格心跳条贴着节点底边，上排青 = 写入、下排琥珀 = 读取 */
+:is(.tp-dev, .tp-grp) { padding: 4px 12px 6px; display: flex; flex-direction: column; justify-content: center; }
+:is(.tp-dev, .tp-grp) .r1 { line-height: 16px; }
+:is(.tp-dev, .tp-grp) .r2 { min-height: 14px; margin-top: 3px; }
+:is(.tp-dev, .tp-grp) .tp-tg { line-height: 14px; }
+.tp-hb { position: absolute; left: 12px; right: 12px; bottom: 2px; height: 5px; display: grid; grid-template-columns: repeat(24, 1fr); grid-template-rows: 2px 2px; gap: 1px 2px; }
+.tp-hb::after { content: ""; position: absolute; inset: -4px 0; } /* 悬停的热区比 5 像素的条大一圈 */
+.tp-hb i { display: block; border-radius: 1px; }
+.tp-hb i.w { background: rgb(var(--tp-up)); box-shadow: 0 0 4px rgba(var(--tp-up), .6); }
+.tp-hb i.r { background: rgb(var(--tp-dn)); box-shadow: 0 0 4px rgba(var(--tp-dn), .55); }
 .tp-hb i.z { background: rgba(134, 160, 210, .2); box-shadow: none; }
-.tp-dev.compact { padding-top: 3px; padding-bottom: 8px; border-radius: 11px; }
-.tp-hb.big { position: static; height: 8px; margin: 12px 0 4px; }
+:is(.tp-dev, .tp-grp).compact { padding-top: 3px; padding-bottom: 8px; border-radius: 11px; }
+.tp-hb.big { position: relative; left: auto; right: auto; bottom: auto; height: 10px; grid-template-rows: 4px 4px; gap: 2px; margin: 12px 0 4px; }
+
+/* 设备分组：同组设备共一块底板（标签点一下折叠）；折叠的组是一叠卡片式的汇总节点 */
+.tp-gp { position: absolute; box-sizing: border-box; border-radius: 16px; pointer-events: none; transition: opacity .3s, border-color .2s;
+  background: linear-gradient(180deg, rgba(57, 135, 229, .11), rgba(57, 135, 229, .03)); border: 1px solid rgba(134, 182, 239, .22); }
+.tp-gp.bad { border-color: rgba(239, 91, 91, .4); background: linear-gradient(180deg, rgba(239, 91, 91, .10), rgba(57, 135, 229, .03)); }
+.tp-gp.dim { opacity: .25; }
+.tp-gl { pointer-events: auto; position: absolute; left: 7px; top: 3px; max-width: calc(100% - 14px); display: inline-flex; align-items: center; gap: 6px; height: 17px; padding: 0 9px 0 5px;
+  font: inherit; font-size: 11.5px; line-height: 17px; color: var(--text-secondary); background: transparent; border: 0; border-radius: 999px; cursor: pointer; white-space: nowrap; transition: color .15s, background .15s; }
+.tp-gl:hover, .tp-gl:focus-visible { color: var(--text-primary); background: rgba(57, 135, 229, .2); outline: none; }
+.tp-gl svg { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tp-gl b { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.tp-gl em { font-style: normal; color: var(--text-muted); }
+.tp-gp.bad .tp-gl em { color: #f08a8a; }
+.tp-grp { --stk: 5px 5px 0 -1px rgba(14, 22, 46, .98), 5px 5px 0 0 rgba(var(--cr), .34); box-shadow: 0 10px 26px -16px rgba(var(--cr), .9), var(--stk); }
+.tp-grp:hover, .tp-grp:focus-visible { box-shadow: 0 0 26px -4px rgba(var(--cr), .75), var(--stk); }
+.tp-grp.bad { box-shadow: 0 0 22px -4px rgba(239, 91, 91, .75), var(--stk); }
+.tp-tg.bad { color: #f08a8a; border-color: rgba(239, 91, 91, .55); }
 
 .tp-tg { display: inline-flex; align-items: center; font-size: 10.5px; line-height: 16px; padding: 0 7px; border-radius: 999px; white-space: nowrap; color: var(--text-muted); border: 1px solid rgba(148, 163, 184, .28); }
 .tp-tg.live { color: var(--text-primary); border-color: rgba(134, 182, 239, .7); box-shadow: 0 0 10px -2px var(--glow); }

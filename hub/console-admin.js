@@ -93,8 +93,9 @@
   (function devices() {
     const IDENT = { gateway: '网关', join: '加入码', token: '令牌' };
     const ROLE = { device: '设备', reporter: '报表', extractor: '抽取', admin: '管理' };
-    const state = { devices: [], def: 3, latest: null };
-    let root = null; let loading = null; let openName = null;
+    const state = { devices: [], def: 3, latest: null, gf: '' }; // gf：按组筛选，'' = 全部，NOGROUP = 没分组的
+    const NOGROUP = '\u0001';
+    let root = null; let loading = null; let openName = null; let editing = null;
 
     const statusOf = (d) => {
       const p = d.policy;
@@ -106,6 +107,41 @@
     };
     const real = () => state.devices.filter((d) => d.role === 'device');
     const nameOf = (d) => d.label || Console.dev(d.name);
+    const groupsOf = () => [...new Set(real().map((d) => d.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+    const groupCell = (d) => `<td class="adm-gc" data-name="${h(d.name)}"><button type="button" class="adm-gb${d.group ? '' : ' none'}" title="修改分组" aria-label="修改 ${h(nameOf(d))} 的分组">${d.group ? h(d.group) : '—'}</button></td>`;
+
+    // 行内改分组：点一下变成输入框（候选是已有的组），回车或点别处保存，Esc 放弃，清空 = 不分组
+    function editGroup(cell) {
+      if (editing) return;
+      const d = state.devices.find((x) => x.name === cell.dataset.name);
+      if (!d) return;
+      editing = d.name;
+      cell.innerHTML = `<input class="inp adm-gi" list="adm-gl" maxlength="20" value="${h(d.group || '')}" aria-label="分组"><datalist id="adm-gl">${groupsOf().map((g) => `<option value="${h(g)}"></option>`).join('')}</datalist>`;
+      const inp = cell.querySelector('input');
+      inp.focus(); inp.select();
+      let done = false;
+      const finish = async (save) => {
+        if (done) return;
+        done = true;
+        const v = inp.value.trim();
+        let saved = false;
+        if (save && v !== (d.group || '')) {
+          inp.disabled = true;
+          try {
+            await api(`${A}devices/${encodeURIComponent(d.name)}`, { body: { group: v || null } });
+            Console.toast(v ? `${nameOf(d)} 已放进「${v}」` : `${nameOf(d)} 已移出分组`, 'ok');
+            saved = true;
+          } catch (e) { Console.toast(e.message, 'err'); }
+        }
+        editing = null;
+        if (saved) { try { await load(); } catch { render(); } } else render();
+      };
+      inp.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); } else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      });
+      inp.addEventListener('blur', () => finish(true));
+    }
 
     const agentPills = (d) => {
       const keys = Object.keys({ ...d.wiring, ...d.agents }).filter((k) => {
@@ -123,8 +159,18 @@
     };
 
     function render() {
-      const list = real().map((d) => ({ d, s: statusOf(d) }))
-        .sort((a, b) => Number(b.s.stale) - Number(a.s.stale) || (Date.parse(b.d.last_seen || 0) || 0) - (Date.parse(a.d.last_seen || 0) || 0));
+      if (editing) return; // 正在行内改分组：别把输入框刷掉，改完会重画
+      const groups = groupsOf();
+      if (state.gf && state.gf !== NOGROUP && !groups.includes(state.gf)) state.gf = '';
+      const noGroup = real().filter((d) => !d.group).length;
+      const gf = root.querySelector('.adm-gf');
+      gf.hidden = groups.length < 2; // 分组少于 2 个不显示筛选
+      if (groups.length < 2) state.gf = '';
+      const chip = (g, label, n) => `<button type="button" data-g="${h(g)}" class="${state.gf === g ? 'on' : ''}">${h(label)} ${n}</button>`;
+      gf.innerHTML = groups.length < 2 ? '' : chip('', '全部', real().length) + groups.map((g) => chip(g, g, real().filter((d) => d.group === g).length)).join('') + (noGroup ? chip(NOGROUP, '未分组', noGroup) : '');
+      const gname = (d) => d.group || '\uffff'; // 没分组的排在最后
+      const list = real().filter((d) => !state.gf || (state.gf === NOGROUP ? !d.group : d.group === state.gf)).map((d) => ({ d, s: statusOf(d) }))
+        .sort((a, b) => (groups.length ? gname(a.d).localeCompare(gname(b.d), 'zh') : 0) || Number(b.s.stale) - Number(a.s.stale) || (Date.parse(b.d.last_seen || 0) || 0) - (Date.parse(a.d.last_seen || 0) || 0));
       const others = state.devices.filter((d) => d.role !== 'device');
       const verPill = (v) => {
         if (!v) return '<span class="muted">—</span>';
@@ -136,6 +182,7 @@
         const hp = d.policy.hide_projects;
         return `<tr class="adm-row ${d.policy.paused ? 'dim' : ''} ${openName === d.name ? 'sel' : ''}" tabindex="0" data-name="${h(d.name)}">
           <td class="nm"><b>${h(nm)}</b>${nm !== d.name ? `<small>${h(d.name)}</small>` : ''}</td>
+          ${groupCell(d)}
           <td><span class="pill dim">${h(IDENT[d.identity] || d.identity)}</span></td>
           <td>${verPill(d.version)}</td>
           <td><span class="adm-st ${s.k === 'bad' ? 'bad' : s.k === 'off' ? 'off' : ''}"><i class="adm-dot ${s.k} ${s.live ? 'live' : ''}"></i>${h(s.text)}</span></td>
@@ -145,7 +192,7 @@
       };
       const otherRow = (d) => `<tr><td class="nm"><b>${h(d.name)}</b></td><td><span class="pill dim">${h(ROLE[d.role] || d.role)}</span></td><td><span class="pill dim">${h(IDENT[d.identity] || d.identity)}</span></td><td class="muted">${h(absTime(d.created))}</td><td class="muted">${d.last_seen ? timeTag(d.last_seen) : '—'}</td></tr>`;
       root.querySelector('.adm-dev-list').innerHTML = list.length
-        ? `<div class="adm-wrap"><table class="adm-tbl"><tr><th>设备</th><th>身份</th><th>设备端</th><th>最近同步</th><th>智能体</th><th>写入</th><th>可见项目</th></tr>${list.map(row).join('')}</table></div>`
+        ? `<div class="adm-wrap"><table class="adm-tbl"><tr><th>设备</th><th>分组</th><th>身份</th><th>设备端</th><th>最近同步</th><th>智能体</th><th>写入</th><th>可见项目</th></tr>${list.map(row).join('')}</table></div>`
         : '<div class="empty">还没有设备</div>';
       const op = root.querySelector('.adm-dev-others');
       op.hidden = !others.length;
@@ -278,12 +325,19 @@
     Console.page('devices', {
       mount(el) {
         root = el;
-        el.innerHTML = `<section class="panel"><div class="ph"><h2>设备</h2><button class="btn go" type="button" id="adm-dev-add">添加设备</button></div><div class="adm-dev-list"><div class="empty">读取中…</div></div></section>
+        el.innerHTML = `<section class="panel"><div class="ph"><h2>设备</h2><div class="chips adm-gf" hidden></div><button class="btn go" type="button" id="adm-dev-add">添加设备</button></div><div class="adm-dev-list"><div class="empty">读取中…</div></div></section>
           <section class="panel adm-dev-others" hidden><div class="ph"><h2>令牌</h2></div><div class="adm-wrap"></div></section>`;
         el.querySelector('#adm-dev-add').onclick = addDevice;
         const open = (e) => { const tr = e.target.closest('.adm-row'); if (tr) openDevice(tr.dataset.name); };
-        el.addEventListener('click', open);
-        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { if (e.target.closest('.adm-row')) { e.preventDefault(); open(e); } } });
+        el.addEventListener('click', (e) => {
+          const gb = e.target.closest('.adm-gb');
+          if (gb) { editGroup(gb.parentElement); return; }
+          if (e.target.closest('.adm-gc')) return; // 分组格里的点击（输入框）不打开抽屉
+          const chip = e.target.closest('.adm-gf button');
+          if (chip) { state.gf = chip.dataset.g; render(); return; }
+          open(e);
+        });
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { if (e.target.closest('.adm-gc')) return; if (e.target.closest('.adm-row')) { e.preventDefault(); open(e); } } });
         Console.every('devices', 60000, load);
       },
       async show() { try { await load(); } catch (e) { root.querySelector('.adm-dev-list').innerHTML = `<div class="empty">${h(e.message)}</div>`; } },
