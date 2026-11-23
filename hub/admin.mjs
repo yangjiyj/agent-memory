@@ -33,6 +33,7 @@ import { createTopologyHistory } from './admin-topology.mjs';
 import { createInsight } from './admin-insight.mjs';
 //
 // [D] import 位
+import { createTools } from './admin-tools.mjs';
 //
 // [E] import 位
 import { createSearch } from './admin-search.mjs';
@@ -635,6 +636,7 @@ export function createAdmin(ctx) {
     createInsight(ctx, kit),
     //
     // [D] 扩展位
+    createTools(ctx, kit),
     //
     // [E] 扩展位
     createSearch(ctx, kit),

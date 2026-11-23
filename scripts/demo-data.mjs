@@ -784,6 +784,29 @@ async function main() {
     }
     log(`主动写入 ${explicitIds.length + supers.length * 2} 条`);
 
+    // 摘要页和修改历史的演示内容：几条标题没信息量的、几组标题近似的、几条改过几版的
+    {
+      const put = async (body) => (await call('POST', '/v1/remember', { token: tok.desktop, client: 'claude-code', body })).id;
+      const upd = (id, args) => call('POST', '/mcp', { token: tok.desktop, client: 'claude-code', body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'memory_update', arguments: { id, ...args } } } });
+      for (const [type, title, body] of [
+        ['preference', 'Memory Block', '本机常用的几条约定，具体见各条。'],
+        ['fact', 'Notes', '临时记的几件小事，还没整理。'],
+        ['reference', '基础设施', '机房、网络和存储的位置，细节在运维手册里。'],
+        ['reference', '设备台账', '各台设备的购置时间和负责人，见共享表格。'],
+        ['preference', '代码生成纪律', '生成代码前先读现有写法，保持风格一致；改动要附测试。'],
+      ]) await put({ type, title, body });
+      for (const [type, titles, project] of [
+        ['preference', ['写周报要按项目分段，每段先写结论', '周报要按项目分段写，每段先写结论再展开', '周报要按项目分段，每一段先写结论'], ''],
+        ['feedback', ['上线验收必须用线上真实账号走一遍', '上线验收要用线上真实账号，不要用测试账号'], 'shop-api'],
+        ['decision', ['数据库迁移选在业务低峰窗口执行', '数据库迁移要选业务低峰的窗口执行'], 'data-pipeline'],
+      ]) for (const title of titles) await put({ type, title, body: `${title}。这是在不同场合重复记下的同一条约定。`, project });
+      // 改过几版：先写，再改标题，再补正文
+      for (const [type, project, t1, b1, t2, b2] of [
+        ['decision', 'shop-api', '发布窗口选在工作日上午', '发布一律放在工作日上午 10 点到 11 点。', '发布窗口：工作日上午 10–11 点，周五不发布', '发布一律放在工作日上午 10 点到 11 点；周五和节假日前一天不发布，紧急修复走加急流程。'],
+        ['pitfall', 'infra', '备份脚本在月底会超时', '备份脚本月底跑得慢。', '备份脚本月底会超时：先清理旧快照再跑', '备份脚本月底会超时（旧快照太多）；先清理 30 天前的快照再跑，必要时把超时调到 40 分钟。'],
+      ]) { const id = await put({ type, title: t1, body: b1, project }); await upd(id, { title: t2 }); await upd(id, { body: b2 }); }
+    }
+
     // 会话抽取出来的候选：上传若干 Codex 会话，再由"抽取机"回写候选
     const exDevs = DEVICES.filter((d) => d.tools.codex);
     const exSessions = [];

@@ -179,7 +179,73 @@
       let t;
       try { t = await loadText(id); } catch (err) { if (id === curId) box.querySelector('.mem-body').textContent = err.status === 404 ? '没有这条记忆' : `读取失败：${err.message}`; return; }
       if (id !== curId) return;
-      const pre = box.querySelector('.mem-body'); if (pre) pre.textContent = t.body;
+      const pre = box.querySelector('.mem-body');
+      const src = provOf(t.body);
+      if (pre) pre.textContent = src ? src.text : t.body;
+      if (pre && src) pre.insertAdjacentHTML('afterend', `<a class="mem-src" href="#/convs/${src.ref}?date=${src.date}">出处：对话 ${src.ref} · ${src.date}</a>`);
+      histMount(box, id);
+    }
+
+    // ---- 出处和修改历史（接口在 admin-tools.mjs）----
+    // 从对话存成的记忆，正文最后一行固定是「出处：对话 <8 位 ref> · <日期>」：详情里把它渲染成可点的链接，正文里不重复显示
+    const SRC = /\n*出处：对话 ([0-9a-f]{8}) · (\d{4}-\d{2}-\d{2})\s*$/;
+    function provOf(body) { const m = SRC.exec(body || ''); return m ? { ref: m[1], date: m[2], text: body.slice(0, m.index).trimEnd() } : null; }
+    let histFor = ''; let H = null;
+    const verWho = (v) => (v.client === 'console' || v.client === 'browser' ? `${dev(v.device)} · 控制台` : v.device === 'review' ? `审批 · ${dev(String(v.client).replace(/^browser:/, ''))}` : v.client ? `${dev(v.device)} · ${tool(v.client)}` : dev(v.device));
+    function diffHtml(diff, truncated) {
+      return String(diff || '').split('\n').map((l) => `<span class="${l.startsWith('@@') ? 'h' : l.startsWith('+') ? 'a' : l.startsWith('-') ? 'd' : 'c'}">${esc(l) || ' '}</span>`).join('') + (truncated ? '<span class="h">…差异太长，后面省略</span>' : '');
+    }
+    function histMount(box, id) {
+      box.insertAdjacentHTML('beforeend', '<section class="mem-hist" id="mem-hist"></section>');
+      histPaint();
+      if (histFor === id) histLoad(id);
+    }
+    function histPaint() {
+      const box = $('mem-hist'); if (!box) return;
+      if (histFor !== curId) { box.innerHTML = '<button class="btn" data-act="hist">历史</button>'; return; }
+      if (!H || H.id !== curId) { box.innerHTML = '<div class="mem-hh"><b>历史</b></div><div class="empty">读取中…</div>'; return; }
+      box.innerHTML = `<div class="mem-hh"><b>历史</b><span class="hint">${H.total} 版${H.more ? `，列出最近 ${H.versions.length} 版` : ''}</span><button class="btn" data-act="hist">收起</button></div>`
+        + H.versions.map((v) => {
+          const off = v.current || !H.restorable;
+          return `<div class="mem-ver ${v.current ? 'cur' : ''}"><span class="v-n">v${v.n}</span><span class="v-t">${esc(shortDay(v.time))} ${esc(date.hm(v.time))}</span><span class="v-by">${esc(verWho(v))}</span>`
+            + `<span class="pill ${v.current ? 'ok' : 'dim'}">${v.current ? '当前 · ' : ''}${esc(v.action)}</span>`
+            + `<span class="v-act" ${off ? `title="${esc(v.current ? '已经是当前版本' : H.reason)}"` : ''}><button class="btn" data-act="vdiff" data-sha="${v.sha}">差异</button>`
+            + `<button class="btn" data-act="vrestore" data-sha="${v.sha}" ${off ? 'disabled' : ''}>恢复</button></span></div><pre class="mem-diff" hidden data-for="${v.sha}"></pre>`;
+        }).join('');
+    }
+    async function histLoad(id) {
+      try {
+        const h = await Console.api(`/console/api/memory/${encodeURIComponent(id)}/history`);
+        if (id !== curId || histFor !== id) return;
+        H = h;
+      } catch (e) {
+        const box = $('mem-hist');
+        if (id === curId && box) box.innerHTML = `<div class="mem-hh"><b>历史</b></div><div class="empty">读取失败：${esc(e.message)}</div>`;
+        return;
+      }
+      histPaint();
+    }
+    async function histAct(a, btn) {
+      const id = curId;
+      if (a === 'hist') { histFor = histFor === id ? '' : id; H = null; histPaint(); if (histFor) await histLoad(id); return; }
+      const sha = btn.dataset.sha;
+      if (a === 'vdiff') {
+        const pre = $('mem-hist').querySelector(`pre[data-for="${sha}"]`);
+        if (!pre.hidden) { pre.hidden = true; return; }
+        pre.hidden = false;
+        if (pre.dataset.done) return;
+        pre.textContent = '读取中…';
+        try { const r = await Console.api(`/console/api/memory/${encodeURIComponent(id)}/history/${sha}`); pre.innerHTML = diffHtml(r.diff, r.truncated); pre.dataset.done = '1'; } catch (e) { pre.textContent = `读取失败：${e.message}`; }
+        return;
+      }
+      const v = H.versions.find((x) => x.sha === sha);
+      const ok = await ask({ title: `恢复到 ${shortDay(v.time)} ${date.hm(v.time)} 的版本`, text: '会新增一个版本，现在的内容仍留在历史里，可以再恢复回来。', okText: '恢复' });
+      if (!ok) return;
+      try { await Console.api(`/console/api/memory/${encodeURIComponent(id)}/restore`, { body: { sha } }); } catch (e) { Console.toast(`恢复失败：${e.message}`, 'err'); return; }
+      Console.toast('已恢复，产生了一个新版本', 'ok');
+      texts.delete(id); H = null;
+      try { await loadAll(true); } catch { /* 列表读不到也先把详情刷新 */ }
+      refresh(); renderDetail();
     }
     function headHtml(e) {
       const native = e.origin === 'native';
@@ -203,9 +269,10 @@
         + `<textarea class="inp" id="mem-lib-e-body" rows="14" aria-label="正文"></textarea><div class="mem-acts"><button class="btn" data-act="save">保存</button><button class="btn" data-act="cancel">取消</button></div></div>`;
       $('mem-lib-e-body').value = t.body; $('mem-lib-e-title').focus();
     }
-    async function onAct(a) {
+    async function onAct(a, btn) {
       const id = curId; const e = BYID.get(id);
       if (a === 'back') { Console.go('lib'); return; }
+      if (a === 'hist' || a === 'vdiff' || a === 'vrestore') return histAct(a, btn);
       if (!e) return;
       if (a === 'edit') return startEdit();
       if (a === 'cancel') return renderDetail();
@@ -277,7 +344,8 @@
           syncBulk(); paint();
         };
         $('mem-lib-bulk').onclick = bulkRetire;
-        $('mem-lib-detail').addEventListener('click', async (ev) => { const b = ev.target.closest('[data-act]'); if (!b || b.disabled) return; b.disabled = true; try { await onAct(b.dataset.act); } finally { b.disabled = false; } });
+        $('mem-lib-detail').addEventListener('click', async (ev) => { const b = ev.target.closest('[data-act]'); if (!b || b.disabled) return; b.disabled = true; try { await onAct(b.dataset.act, b); } finally { b.disabled = false; } });
+        window.addEventListener('am-lib-stale', () => { loaded = false; }); // 别处新写了记忆（对话存成记忆、合并）：下次进来重新读
         window.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && Console.visible('lib') && curId && !document.querySelector('.mem-modal') && !editing) Console.go('lib'); });
         Console.api('/browse/semantic').then((r) => {
           semOn = Boolean(r.status?.enabled);
@@ -466,7 +534,7 @@
 
     // ---- 读原文 ----
     function msgHtml(m, showDay) {
-      return `<div class="mem-msg ${m.role === 'user' ? 'u' : 'a'} ${R.hit === m.index ? 'hit' : ''}" data-i="${m.index}"><div class="mem-mh"><b>${m.role === 'user' ? '用户' : '助手'}</b><span>${showDay ? `${esc(m.day.slice(5))} ` : ''}${esc(m.time)}</span></div>`
+      return `<div class="mem-msg ${m.role === 'user' ? 'u' : 'a'} ${R.hit === m.index ? 'hit' : ''}" data-i="${m.index}" data-day="${esc(m.day)}"><div class="mem-mh"><b>${m.role === 'user' ? '用户' : '助手'}</b><span>${showDay ? `${esc(m.day.slice(5))} ` : ''}${esc(m.time)}</span></div>`
         + `<div class="mem-mt">${hl(m.text, words)}</div>${m.truncated ? '<button class="btn" data-full>展开全文</button>' : ''}</div>`;
     }
     function renderReader() {
@@ -515,9 +583,94 @@
       } catch (e) { btn.disabled = false; btn.textContent = '展开全文'; Console.toast(`读取失败：${e.message}`, 'err'); }
     }
 
+    // ---- 选中一段文字存成记忆（接口在 admin-tools.mjs）----
+    let sbtn = null; let sdat = null; let stimer = 0; let sraf = 0;
+    const hideSel = () => { if (sbtn) sbtn.hidden = true; sdat = null; };
+    const elOf = (n) => (n && n.nodeType === 1 ? n : n?.parentElement);
+    function readSel() {
+      const s = getSelection();
+      if (!R?.session || !s || s.isCollapsed || !s.rangeCount) return null;
+      const box = $('mem-cv-read');
+      const a = elOf(s.anchorNode)?.closest('.mem-mt'); const f = elOf(s.focusNode)?.closest('.mem-mt');
+      if (!a || !f || !box.contains(a) || !box.contains(f)) return null;
+      const text = s.toString().trim();
+      if (!text) return null;
+      const r = s.getRangeAt(0);
+      const msg = elOf(r.startContainer)?.closest('.mem-msg');
+      return { text, ref: R.session.ref, day: msg?.dataset.day || R.date || dayOf(R.session.first), rect: r.getBoundingClientRect() };
+    }
+    function showSel() {
+      const d = readSel();
+      if (!d) { hideSel(); return; }
+      if (!sbtn) {
+        sbtn = document.createElement('button');
+        sbtn.className = 'btn mem-sel-btn'; sbtn.textContent = '存成记忆';
+        sbtn.addEventListener('mousedown', (e) => e.preventDefault()); // 不让点按钮把选区点没了
+        sbtn.onclick = () => { const x = sdat; hideSel(); if (x) saveForm(x); };
+        document.body.appendChild(sbtn);
+      }
+      sdat = d; sbtn.hidden = false;
+      const w = sbtn.offsetWidth || 86; const h = sbtn.offsetHeight || 30;
+      let top = d.rect.bottom + 8;
+      if (top + h > innerHeight - 8) top = Math.max(8, d.rect.top - h - 8);
+      sbtn.style.left = `${Math.min(Math.max(8, d.rect.left), innerWidth - w - 8)}px`; sbtn.style.top = `${top}px`;
+    }
+    const soon = (ms) => { clearTimeout(stimer); stimer = setTimeout(showSel, ms); };
+    function savedToast(id) {
+      Console.toast('已存成记忆', 'ok');
+      const n = document.querySelector('.toasts')?.lastElementChild;
+      if (!n) return;
+      const m = n.cloneNode(false); // 带链接的提示多留几秒，来得及点
+      m.className = 'toast ok'; m.innerHTML = `已存成记忆<a href="#/lib/${esc(id)}">看这条</a>`;
+      n.replaceWith(m);
+      setTimeout(() => { m.style.transition = 'opacity .3s'; m.style.opacity = 0; setTimeout(() => m.remove(), 320); }, 8000);
+    }
+    function saveForm(x) {
+      const projects = (Console.data()?.projects || []).map((p) => p.p).filter((p) => p && p !== '其他' && p !== '未写日志');
+      const wrap = document.createElement('div');
+      wrap.className = 'mem-modal';
+      wrap.innerHTML = '<form class="mem-dlg mem-sv" role="dialog" aria-modal="true"><h3>存成记忆</h3>'
+        + `<div class="mem-sv-row"><label class="mem-fld"><span>类型</span><select class="inp" name="type">${TYPES.map((t) => `<option value="${t}" ${t === 'fact' ? 'selected' : ''}>${esc(zh.type[t])}</option>`).join('')}</select></label>`
+        + `<label class="mem-fld"><span>项目</span><input class="inp" name="project" list="mem-sv-projects" maxlength="60" autocomplete="off"><datalist id="mem-sv-projects">${projects.map((p) => `<option value="${esc(p)}">`).join('')}</datalist></label></div>`
+        + '<label class="mem-fld"><span>标题</span><input class="inp" name="title" maxlength="200" autocomplete="off"></label>'
+        + '<label class="mem-fld" data-subj hidden><span>主题键</span><input class="inp" name="subject" maxlength="120" placeholder="如 myapp/prod-version" autocomplete="off"></label>'
+        + '<label class="mem-fld"><span>正文</span><textarea class="inp" name="body" rows="8"></textarea></label>'
+        + `<div class="mem-sv-src">出处：对话 ${esc(x.ref)} · ${esc(x.day)}</div><div class="mem-sv-err" hidden></div>`
+        + '<div class="mem-dact"><button type="button" class="btn" data-x>取消</button><button type="submit" class="btn" data-ok disabled>保存</button></div></form>';
+      document.body.appendChild(wrap);
+      const f = wrap.querySelector('form'); const err = wrap.querySelector('.mem-sv-err'); const ok = wrap.querySelector('[data-ok]');
+      f.elements.body.value = x.text;
+      const sync = () => {
+        wrap.querySelector('[data-subj]').hidden = f.elements.type.value !== 'status';
+        ok.disabled = !f.elements.title.value.trim() || (f.elements.type.value === 'status' && !f.elements.subject.value.trim());
+      };
+      const done = () => { document.removeEventListener('keydown', key, true); wrap.remove(); };
+      const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(); } };
+      document.addEventListener('keydown', key, true);
+      f.addEventListener('input', sync); f.elements.type.addEventListener('change', sync);
+      wrap.querySelector('[data-x]').onclick = done;
+      f.onsubmit = async (ev) => {
+        ev.preventDefault();
+        if (ok.disabled) return;
+        ok.disabled = true; err.hidden = true;
+        const body = { ref: x.ref, date: x.day, type: f.elements.type.value, title: f.elements.title.value.trim(), body: f.elements.body.value, project: f.elements.project.value.trim() };
+        if (body.type === 'status') body.subject = f.elements.subject.value.trim();
+        try {
+          const r = await Console.api('/console/api/memory/from-conv', { body });
+          done(); getSelection()?.removeAllRanges();
+          window.dispatchEvent(new Event('am-lib-stale'));
+          savedToast(r.id);
+        } catch (e) { err.textContent = e.message; err.hidden = false; sync(); }
+      };
+      Console.api('/console/api/memory/conv-hint', { query: { ref: x.ref, date: x.day } }).then((h) => { if (h.project && !f.elements.project.value) f.elements.project.value = h.project; }).catch(() => {});
+      f.elements.title.focus(); sync();
+    }
+
     Console.page('convs', {
+      hide() { hideSel(); },
       mount(el) {
         root = el;
+        document.addEventListener('selectionchange', () => { if (Console.visible('convs')) soon(250); });
         el.innerHTML = `<section class="panel mem-bar"><form class="mem-search" id="mem-cv-form"><input class="inp" id="mem-cv-q" type="search" autocomplete="off" placeholder="搜对话原文，空格分隔多个词" aria-label="搜索对话">`
           + `<button class="btn" type="submit">搜索</button></form><div class="mem-filters"><select class="inp" id="mem-cv-device" aria-label="设备"><option value="">全部设备</option></select>`
           + `<select class="inp" id="mem-cv-tool" aria-label="智能体"><option value="">全部智能体</option></select>`
@@ -538,6 +691,9 @@
           else if (a.dataset.act === 'more') { fetchMsgs(false); renderReader(); }
           else if (a.dataset.act === 'fromstart') { R.from = 0; R.hit = 0; R.messages = []; fetchMsgs(true); renderReader(); }
         });
+        $('mem-cv-read').addEventListener('mouseup', () => soon(10));
+        $('mem-cv-read').addEventListener('scroll', () => { if (sdat && !sraf) sraf = requestAnimationFrame(() => { sraf = 0; showSel(); }); });
+        addEventListener('resize', () => { if (sdat) showSel(); });
         fillOptions(); renderList(); renderReader();
       },
       show(params) {

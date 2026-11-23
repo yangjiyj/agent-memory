@@ -1016,10 +1016,31 @@ function renderEntry(e) {
   return `${head.join('\n')}\n---\n${e.body}`;
 }
 
-function digest(who, targetTool) {
+// 摘要的人工规则（控制台「摘要」页写 state/digest-rules.json）：pin 置顶（排在每节最前，优先占预算，不受年龄窗口限制），
+// exclude 排除（不出现）。没有规则时输出和从前逐字一致。
+const digestRulesFile = () => path.join(CFG.state, 'digest-rules.json');
+function digestRules() {
+  const r = readJSON(digestRulesFile(), {});
+  const ids = (v) => new Set(Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []);
+  return { pin: ids(r?.pin), exclude: ids(r?.exclude) };
+}
+// 每种类型落在摘要的哪一节（下标同 digest 里 sections）
+const DIGEST_SECTION_OF = { preference: 0, feedback: 0, status: 1, decision: 2, pitfall: 2, fact: 3, reference: 3 };
+
+// info（可选）：传一个空对象进来，digest 会把"哪些条目列出来了、各占哪一行、预算用了多少"填进去，控制台摘要页用；不传时行为不变
+function digest(who, targetTool, info) {
   const tool = targetTool || who.client;
   const mine = (e) => e.meta.origin === 'native' && e.meta.author === who.device && e.meta.client === tool;
   const active = [...store.values()].filter((e) => e.meta.state === 'active' && !mine(e)).sort(byUpdated);
+  const rules = digestRules();
+  const pool = rules.exclude.size ? active.filter((e) => !rules.exclude.has(e.meta.id)) : active;
+  const pinned = (e) => rules.pin.has(e.meta.id);
+  // 取一节的条目：置顶的不受年龄窗口限制，并排在最前面（其余顺序不变）
+  const pick = (types, keep) => {
+    const own = pool.filter((e) => types.includes(e.meta.type) && (keep(e) || pinned(e)));
+    const pins = own.filter(pinned);
+    return pins.length ? [...pins, ...own.filter((e) => !pinned(e))] : own;
+  };
   const short = (s, n = 90) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
   const proj = (e) => (e.meta.project ? `[${e.meta.project}] ` : '');
   // 每节有自己的额度，避免现状条目挤掉决定、坑和参考
@@ -1027,13 +1048,13 @@ function digest(who, targetTool) {
     {
       title: '偏好与反馈（一直有效，照做）',
       max: 3600,
-      items: active.filter((e) => e.meta.type === 'preference' || e.meta.type === 'feedback'),
+      items: pick(['preference', 'feedback'], () => true),
       line: (e) => `- ${short(e.meta.title, 110)}`,
     },
     {
       title: '项目现状（按更新时间，只列标题）',
       max: 5000,
-      items: active.filter((e) => e.meta.type === 'status' && ageDays(e.meta.updated) <= 60),
+      items: pick(['status'], (e) => ageDays(e.meta.updated) <= 60),
       line: (e) => {
         const stale = ageDays(e.meta.updated) > STALE_DAYS ? ` ⚠${Math.floor(ageDays(e.meta.updated))}天未更新` : '';
         return `- ${proj(e)}${short(e.meta.title, 80)}（${day(e.meta.updated).slice(5)}）${stale}`;
@@ -1042,13 +1063,13 @@ function digest(who, targetTool) {
     {
       title: `最近 ${STALE_DAYS} 天的决定与坑`,
       max: 2000,
-      items: active.filter((e) => (e.meta.type === 'decision' || e.meta.type === 'pitfall') && ageDays(e.meta.updated) <= STALE_DAYS),
+      items: pick(['decision', 'pitfall'], (e) => ageDays(e.meta.updated) <= STALE_DAYS),
       line: (e) => `- [${TYPE_LABEL[e.meta.type]}] ${proj(e)}${short(e.meta.title, 70)}`,
     },
     {
       title: '参考与事实',
       max: 1200,
-      items: active.filter((e) => e.meta.type === 'reference' || e.meta.type === 'fact'),
+      items: pick(['reference', 'fact'], () => true),
       line: (e) => `- ${proj(e)}${short(e.meta.title, 60)}`,
     },
   ];
@@ -1065,18 +1086,29 @@ function digest(who, targetTool) {
   let omitted = 0;
   // 最近 3 天在做什么（来自对话存档的工作日志），放在偏好后面
   const recent = conv ? conv.recentSection(1800) : '';
+  const recentBlock = recent ? `\n## 最近 3 天在做什么（各机器各智能体的会话日志；细节用 memory_timeline 查）\n${recent}` : '';
+  // 有置顶时，为后面各节的置顶条目（和必放的"最近 3 天"）预留预算，免得前面的普通条目把预算吃光；没有置顶时不预留，行为不变
+  const pinBytes = sections.map((s) => Math.min(s.max, s.items.filter(pinned).reduce((a, e) => a + Buffer.byteLength(`${s.line(e)}\n`), 0)));
+  const hasPin = pinBytes.some((n) => n > 0);
+  // 各节标题是在这一节的条目放完之后才加进去的，原来的预算检查不算它；有置顶时要算上（本节的和后面有置顶那几节的），否则置顶的行会因为标题差几十字节挤不进去
+  const headBytes = sections.map((s) => Buffer.byteLength(`\n## ${s.title}\n`));
+  if (info) Object.assign(info, { active, listed: new Set(), lines: new Map(), sectionOf: DIGEST_SECTION_OF, titles: sections.map((s) => s.title), recentBlock });
   for (const [i, s] of sections.entries()) {
-    if (i === 1 && recent) out += `\n## 最近 3 天在做什么（各机器各智能体的会话日志；细节用 memory_timeline 查）\n${recent}`;
+    if (i === 1 && recentBlock) out += recentBlock;
+    const own = hasPin ? headBytes[i] : 0;
+    const reserve = hasPin ? sections.reduce((a, _, j) => a + (j > i && pinBytes[j] > 0 ? pinBytes[j] + headBytes[j] : 0), 0) + (i === 0 ? Buffer.byteLength(recentBlock) : 0) : 0;
     let block = '';
     for (const e of s.items) {
       const line = s.line(e) + '\n';
-      if (Buffer.byteLength(block + line) > s.max || Buffer.byteLength(out + block + line) > CFG.digest_budget) { omitted++; continue; }
+      if (Buffer.byteLength(block + line) > s.max || Buffer.byteLength(out + block + line) + own + (pinned(e) ? 0 : reserve) > CFG.digest_budget) { omitted++; continue; }
       block += line;
+      if (info) { info.listed.add(e.meta.id); info.lines.set(e.meta.id, line.slice(0, -1)); }
     }
     if (block) out += `\n## ${s.title}\n${block}`;
   }
   if (omitted) out += `\n…还有 ${omitted} 条没列出，用 memory_search 查。\n`;
   if (!active.length) out += '\n（暂时还没有来自其他机器或工具的记忆。）\n';
+  if (info) Object.assign(info, { omitted, bytes: Buffer.byteLength(out) });
   return out;
 }
 
@@ -1896,6 +1928,7 @@ async function main() {
     usageMetaFile,
     //
     // [D] 参数位
+    updateEntry, remember, digest, parseEntry,
     //
     // [E] 参数位
     searchMemory: search, byUpdated,

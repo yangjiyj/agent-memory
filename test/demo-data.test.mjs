@@ -100,6 +100,21 @@ describe('演示数据', () => {
     assert.ok(JSON.parse(fs.readFileSync(path.join(dir, 'state', 'usage-meta.json'), 'utf8')).since);
   });
 
+  it('摘要页有没信息量、重复的记忆，修改历史有多版的记忆', async () => {
+    const d = await get('/console/api/digest');
+    assert.ok(d.items.length > 200 && d.budget.used > 0 && d.budget.used <= d.budget.limit + 100);
+    const vague = d.items.filter((x) => x.flags.includes('vague')).map((x) => x.title);
+    for (const t of ['Memory Block', 'Notes', '基础设施', '设备台账', '代码生成纪律']) assert.ok(vague.includes(t), t);
+    assert.ok(d.counts.dup_groups >= 3 && d.counts.dup_items >= 7);
+    const week = d.items.filter((x) => x.title.startsWith('周报要按项目分段') || x.title.startsWith('写周报要按项目分段'));
+    assert.equal(week.length, 3);
+    assert.equal(new Set(week.map((x) => x.dup)).size, 1);
+    const entries = (await get('/browse/data')).entries;
+    const e = entries.find((x) => x.title.startsWith('发布窗口'));
+    const h = await get(`/console/api/memory/${e.id}/history`);
+    assert.ok(h.total >= 3 && h.restorable && h.versions.some((v) => v.action === '编辑'));
+  });
+
   it('拓扑页的流量、心跳条、事件带都有内容', async () => {
     const t = await get('/console/api/topology');
     const devs = t.devices;
