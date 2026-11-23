@@ -676,6 +676,7 @@
         <section class="panel tp-panel"><div class="tp-scroll"><div class="tp-stage"></div></div><div class="tp-ev" hidden><h4>刚刚发生</h4><ul></ul></div></section></div>`;
       box = el.querySelector('.tp'); probBox = el.querySelector('.tp-prob'); scroller = el.querySelector('.tp-scroll'); stage = el.querySelector('.tp-stage'); feedEl = el.querySelector('.tp-ev'); fsBtn = el.querySelector('.tp-fsb');
       fsBtn.title = '全屏'; fsBtn.setAttribute('aria-label', '全屏');
+      stage.innerHTML = '<div class="empty">读取中…</div>';
       fsBtn.addEventListener('click', toggleFs);
       probBox.addEventListener('click', (e) => {
         const b = e.target.closest('.tp-chip'); if (!b) return;
