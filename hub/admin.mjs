@@ -529,7 +529,8 @@ export function createAdmin(ctx) {
   // ---- 扩展接口 ----
   // 每个 admin-<名字>.mjs 导出 createXxx(ctx, kit)，返回 { handle(req, res, url, sub, viewer) }：认领了这个请求就返回 true，否则返回 undefined。
   // kit 里是核心的小工具；出错抛 kit.HttpError / kit.bad，由下面的 handle 统一变成 4xx 和中文 error。
-  const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY };
+  // visibleTo(viewer, project)：浏览者按 hide_projects 能不能看这个项目（没有项目的内容都可见）；hiddenOf(viewer)：被隐藏的项目名（小写）
+  const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY, visibleTo: ctx.visibleTo, hiddenOf: ctx.hiddenOf };
   const exts = [
     // [B] 扩展位
     //
