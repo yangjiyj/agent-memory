@@ -58,11 +58,11 @@
     const k = D.kpi;
     const items = [
       [k.sessions, (v) => Math.round(v).toLocaleString(), '个会话'],
-      [k.messages, (v) => `${(v / 1e4).toFixed(1)}<small>万</small>`, '条你和智能体说的话'],
+      [k.messages, (v) => (window.AMI18n?.lang === 'en' ? `${(v / 1e3).toFixed(1)}<small>K</small>` : `${(v / 1e4).toFixed(1)}<small>万</small>`), '条你和智能体说的话'],
       [k.chars, (v) => `${(v / 1e6).toFixed(1)}<small>M 字</small>`, '对话原文（长期存档）'],
       [k.days, (v) => `${Math.round(v)}<small>天</small>`, '有工作日志的日子'],
       [D.memories.total, (v) => Math.round(v).toLocaleString(), '条有效记忆'],
-      [k.devices, (v) => `${Math.round(v)}<small>台 · ${k.tools} 种</small>`, '机器 · 智能体'],
+      [k.devices, (v) => (window.AMI18n?.lang === 'en' ? `${Math.round(v)}<small>/ ${k.tools}</small>` : `${Math.round(v)}<small>台 · ${k.tools} 种</small>`), '机器 · 智能体'],
     ];
     $('kpis').innerHTML = items.map(() => '<div class="kpi"><div class="v">0</div><div class="l"></div></div>').join('');
     [...$('kpis').children].forEach((n, i) => { n.querySelector('.l').textContent = items[i][2]; Console.countUp(n.querySelector('.v'), items[i][0], items[i][1]); });
@@ -224,7 +224,7 @@
       g.fillText(dev(nd.n), x, ly);
       g.font = `${10.5 * dpr}px ${fam}`; g.fillStyle = 'rgba(163,174,203,.9)';
       const t0 = nd.tools[0];
-      const sub = nd.active.length ? `${tool(nd.active[0][0])} · ${nd.active[0][1].project || '在干活'}` : t0 ? `${tool(t0[0])} ${date.ago(t0[1].last)}` : (nd.syncOk ? '在线' : '没同步');
+      const sub = nd.active.length ? `${tool(nd.active[0][0])} · ${nd.active[0][1].project || '在干活'}` : t0 ? `${tool(t0[0])} ${Console.t(date.ago(t0[1].last))}` : (nd.syncOk ? '在线' : '没同步');
       g.fillText(sub, x, ly + (below ? 13 : -13) * dpr);
     });
   }

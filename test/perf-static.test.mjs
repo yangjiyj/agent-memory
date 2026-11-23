@@ -99,7 +99,8 @@ describe('console.html 改写与合并', () => {
     };
     inOrder(css.text, SRC_CSS);
     inOrder(js.text, SRC_JS);
-    assert.equal(SRC_JS[0], 'console-core.js', 'core 要排在最前面');
+    assert.deepEqual(SRC_JS.slice(0, 3), ['console-i18n.js', 'console-i18n-ui.js', 'console-i18n-srv.js'], '语言引擎和词典要最先加载');
+    assert.equal(SRC_JS[3], 'console-core.js', 'core 紧跟在语言引擎和词典后面');
   });
 
   it('包：304、压缩、哈希就是内容的哈希', async () => {

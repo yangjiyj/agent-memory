@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>agent-memory</title>
+<script src="/console/console-i18n.js"></script>
+<script src="/console/console-i18n-ui.js"></script>
+<script src="/console/console-i18n-srv.js"></script>
 <style>
   :root {
     color-scheme: dark;
@@ -324,11 +327,11 @@ function renderKpis() {
   const k = DATA.kpi;
   const items = [
     [k.sessions, (v) => Math.round(v).toLocaleString(), '个会话'],
-    [k.messages, (v) => `${(v / 1e4).toFixed(1)}<small>万</small>`, '条你和智能体说的话'],
+    [k.messages, (v) => (window.AMI18n?.lang === 'en' ? `${(v / 1e3).toFixed(1)}<small>K</small>` : `${(v / 1e4).toFixed(1)}<small>万</small>`), '条你和智能体说的话'],
     [k.chars, (v) => `${(v / 1e6).toFixed(1)}<small>M 字</small>`, '对话原文（长期存档）'],
     [k.days, (v) => `${Math.round(v)}<small>天</small>`, '有工作日志的日子'],
     [DATA.memories.total, (v) => Math.round(v).toLocaleString(), '条有效记忆'],
-    [k.devices, (v) => `${Math.round(v)}<small>台 · ${k.tools} 种</small>`, '机器 · 智能体'],
+    [k.devices, (v) => (window.AMI18n?.lang === 'en' ? `${Math.round(v)}<small>/ ${k.tools}</small>` : `${Math.round(v)}<small>台 · ${k.tools} 种</small>`), '机器 · 智能体'],
   ];
   $('kpis').innerHTML = items.map(() => '<div class="kpi"><div class="v">0</div><div class="l"></div></div>').join('');
   [...$('kpis').children].forEach((n, i) => { n.querySelector('.l').textContent = items[i][2]; countUp(n.querySelector('.v'), items[i][0], items[i][1]); });
@@ -385,7 +388,7 @@ function renderCalendar() {
   // 图例：少 → 多（搜词时换成橙色：提到的会话数）
   const ramp = SEARCH ? HOT : SEQ;
   const ly = H - 12; const lx = W - 10 - ramp.length * 14 - 60;
-  el('text', { x: lx, y: ly + 9 }, svg).textContent = SEARCH ? '1' : '少';
+  el('text', { x: window.AMI18n?.lang === 'en' ? lx - 14 : lx, y: ly + 9 }, svg).textContent = SEARCH ? '1' : '少';
   ramp.forEach((c, i) => el('rect', { x: lx + 16 + i * 14, y: ly, width: 11, height: 11, rx: 2, fill: c }, svg));
   el('text', { x: lx + 20 + ramp.length * 14, y: ly + 9 }, svg).textContent = SEARCH ? `${ramp.length}+ 个会话` : '多';
   box._mark = (d) => cells.forEach((c) => { const on = c.getAttribute('data-d') === d; c.setAttribute('stroke', on ? '#e8ecf6' : 'none'); c.setAttribute('stroke-width', on ? 2 : 0); });
@@ -992,7 +995,7 @@ fetch('/browse/viz-data').then((r) => r.json()).then((d) => {
   const days = Object.keys(d.days).sort();
   currentDay = d.days[todayStr()] ? todayStr() : days[days.length - 1];
   setCruise(true, 0);
-  $('foot').textContent = `数据生成于 ${new Date(d.generated).toLocaleString('zh-CN', { hour12: false })}`;
+  $('foot').textContent = `数据生成于 ${new Date(d.generated).toLocaleString(window.AMI18n ? AMI18n.locale : 'zh-CN', { hour12: false })}`;
   // 作息、大事记、回放用的每日摘要：第一次要扫一遍存档，可能要几秒
   $('punch').innerHTML = '<div class="empty">正在统计作息…</div>';
   fetch('/browse/viz-extra').then((r) => r.json()).then((x) => { EXTRA = x; renderPunch(); renderMilestones(); });

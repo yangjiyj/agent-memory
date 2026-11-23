@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>你的 AI 工作年报</title>
+<script src="/console/console-i18n.js"></script>
+<script src="/console/console-i18n-ui.js"></script>
+<script src="/console/console-i18n-srv.js"></script>
+<script>if (window.AMI18n && AMI18n.lang === 'en') AMI18n.add({ 条: ' messages' }); // 年报里"条"都是消息（控制台里的"条"是条目）</script>
 <style>
   :root { color-scheme: dark; --ink: #f2f4fb; --soft: #b9c2dc; --mute: #7d88a8; --b1: #3987e5; --b2: #9085e9; --o: #ec835a; --g: #199e70; --m: #d55181; }
   * { box-sizing: border-box; }
@@ -73,7 +77,8 @@ const TOOL = { 'claude-code': 'Claude Code', codex: 'Codex', workbuddy: 'WorkBud
 let DEVICE = {}; // 设备显示名：中心 config.json 的 device_labels，如 { "my-laptop": "笔记本" }
 const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9'];
 const WEEK = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-const wan = (n) => (n >= 1e4 ? `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}<small>万</small>` : Math.round(n).toLocaleString());
+const wan = (n) => (window.AMI18n && AMI18n.lang === 'en' ? (n >= 1e6 ? `${(n / 1e6).toFixed(1)}<small>M</small>` : n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e5 ? 0 : 1)}<small>K</small>` : Math.round(n).toLocaleString())
+  : n >= 1e4 ? `${(n / 1e4).toFixed(n >= 1e6 ? 0 : 1)}<small>万</small>` : Math.round(n).toLocaleString());
 const md = (d) => (d ? `${parseInt(d.slice(5, 7), 10)} 月 ${parseInt(d.slice(8, 10), 10)} 日` : '');
 const BGS = [
   'radial-gradient(60% 50% at 20% 20%, rgba(57,135,229,.45), transparent), radial-gradient(50% 50% at 80% 70%, rgba(144,133,233,.4), transparent), #070a16',

@@ -67,7 +67,7 @@
       // 图例：少 → 多（搜词时换成橙色：提到的会话数）
       const ramp = SEARCH ? HOT : SEQ;
       const ly = H - 12; const lx = W - 10 - ramp.length * 14 - 60;
-      el('text', { x: lx, y: ly + 9 }, svg).textContent = SEARCH ? '1' : '少';
+      el('text', { x: window.AMI18n?.lang === 'en' ? lx - 14 : lx, y: ly + 9 }, svg).textContent = SEARCH ? '1' : '少';
       ramp.forEach((c, i) => el('rect', { x: lx + 16 + i * 14, y: ly, width: 11, height: 11, rx: 2, fill: c }, svg));
       el('text', { x: lx + 20 + ramp.length * 14, y: ly + 9 }, svg).textContent = SEARCH ? `${ramp.length}+ 个会话` : '多';
       box._mark = (d) => cells.forEach((c) => { const on = c.getAttribute('data-d') === d; c.setAttribute('stroke', on ? '#e8ecf6' : 'none'); c.setAttribute('stroke-width', on ? 2 : 0); });
@@ -503,7 +503,7 @@
       $('hoProj').addEventListener('change', syncShare); syncShare();
       $('hoForm').onsubmit = async (e) => {
         e.preventDefault();
-        $('hoOut').value = '生成中…';
+        $('hoOut').value = Console.t('生成中…');
         try {
           $('hoOut').value = await Console.api('/browse/handoff', { query: { project: $('hoProj').value, days: $('hoDays').value, query: $('hoQ').value } });
         } catch (err) { $('hoOut').value = ''; Console.toast(err.message, 'err'); }

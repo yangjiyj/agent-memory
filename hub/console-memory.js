@@ -291,7 +291,7 @@
         return;
       }
       if (a === 'retire') {
-        const reason = await ask({ title: `作废「${e.title}」`, text: `不会真删：条目变为「已作废」，在状态筛选里选「已作废」可以找回。${e.origin === 'native' ? '这是工具自己记的，源文件改了会重新出现。' : ''}`, input: { label: '原因', value: '过时/重复' }, okText: '作废', danger: true });
+        const reason = await ask({ title: `作废「${e.title}」`, text: `不会真删：条目变为「已作废」，在状态筛选里选「已作废」可以找回。${e.origin === 'native' ? '这是工具自己记的，源文件改了会重新出现。' : ''}`, input: { label: '原因', value: Console.t('过时/重复') }, okText: '作废', danger: true });
         if (!reason) return;
         const r = await manage({ action: 'retire', ids: [id], reason });
         if (r) { e.state = 'retired'; sel.delete(id); Console.toast('已作废', 'ok'); refresh(); renderDetail(); }
@@ -299,7 +299,7 @@
     }
     async function bulkRetire() {
       const ids = [...sel]; if (!ids.length) return;
-      const reason = await ask({ title: `作废选中的 ${ids.length} 条`, text: '不会真删：这些条目变为「已作废」，在状态筛选里选「已作废」可以找回。', input: { label: '原因', value: '过时/重复' }, okText: `作废 ${ids.length} 条`, danger: true });
+      const reason = await ask({ title: `作废选中的 ${ids.length} 条`, text: '不会真删：这些条目变为「已作废」，在状态筛选里选「已作废」可以找回。', input: { label: '原因', value: Console.t('过时/重复') }, okText: `作废 ${ids.length} 条`, danger: true });
       if (!reason) return;
       const r = await manage({ action: 'retire', ids, reason });
       if (!r) return;
@@ -464,7 +464,7 @@
         const r = await manage({ action: 'edit', id, title: e.title });
         if (r) { Console.toast('已确认仍有效', 'ok'); D.stale = D.stale.filter((x) => x !== id); await after(); } else b.disabled = false;
       } else if (a === 'retire') {
-        const reason = await ask({ title: `作废「${e.title}」`, text: `不会真删：条目变为「已作废」，在记忆库的状态筛选里选「已作废」可以找回。${e.origin === 'native' ? '这是工具自己记的，源文件改了会重新出现。' : ''}`, input: { label: '原因', value: '过时' }, okText: '作废', danger: true });
+        const reason = await ask({ title: `作废「${e.title}」`, text: `不会真删：条目变为「已作废」，在记忆库的状态筛选里选「已作废」可以找回。${e.origin === 'native' ? '这是工具自己记的，源文件改了会重新出现。' : ''}`, input: { label: '原因', value: Console.t('过时') }, okText: '作废', danger: true });
         if (!reason) return;
         const r = await manage({ action: 'retire', ids: [id], reason });
         if (r) { Console.toast('已作废', 'ok'); await after([id]); }
@@ -535,7 +535,7 @@
     // ---- 读原文 ----
     function msgHtml(m, showDay) {
       return `<div class="mem-msg ${m.role === 'user' ? 'u' : 'a'} ${R.hit === m.index ? 'hit' : ''}" data-i="${m.index}" data-day="${esc(m.day)}"><div class="mem-mh"><b>${m.role === 'user' ? '用户' : '助手'}</b><span>${showDay ? `${esc(m.day.slice(5))} ` : ''}${esc(m.time)}</span></div>`
-        + `<div class="mem-mt">${hl(m.text, words)}</div>${m.truncated ? '<button class="btn" data-full>展开全文</button>' : ''}</div>`;
+        + `<div class="mem-mt" data-i18n-skip>${hl(m.text, words)}</div>${m.truncated ? '<button class="btn" data-full>展开全文</button>' : ''}</div>`;
     }
     function renderReader() {
       const box = $('mem-cv-read');

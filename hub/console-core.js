@@ -79,7 +79,10 @@
     ] },
   ];
   const ALL = NAV.flatMap((n) => n.items || [n]);
-  const titleOf = (id) => ALL.find((x) => x.id === id)?.title || id;
+  // 页面名：英文下用 AMI18n 的页面名表（同一个汉字在表头里是单数、页面名是复数），中文原样
+  const T = (x) => (window.AMI18n ? window.AMI18n.nav(x.id, x.title) : x.title);
+  const titleOf = (id) => { const x = ALL.find((y) => y.id === id); return x ? T(x) : id; };
+  Console.t = (s) => (window.AMI18n ? window.AMI18n.t(s) : s); // 画布文字等不在 DOM 里的串显式翻译；中文下原样返回
 
   // ---------------- 公共小函数 ----------------
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -131,7 +134,7 @@
   tipEl.className = 'tip';
   document.body.appendChild(tipEl);
   Console.tip = {
-    show(e, html) { tipEl.innerHTML = html; tipEl.style.opacity = 1; Console.tip.move(e); },
+    show(e, html) { tipEl.innerHTML = html; window.AMI18n?.apply(tipEl); tipEl.style.opacity = 1; Console.tip.move(e); },
     move(e) {
       const w = tipEl.offsetWidth; const h = tipEl.offsetHeight;
       let x = e.clientX + 14; let y = e.clientY + 14;
@@ -316,7 +319,7 @@
     nav.innerHTML = NAV.map((n) => n.items
       ? `<h4>${n.group}</h4>${n.items.map(link).join('')}`
       : link(n)).join('');
-    function link(x) { return `<a href="#/${x.id}" data-id="${x.id}">${x.icon}<span>${x.title}</span><i class="bd" hidden></i></a>`; }
+    function link(x) { return `<a href="#/${x.id}" data-id="${x.id}">${x.icon}<span>${T(x)}</span><i class="bd" hidden></i></a>`; }
     const box = document.getElementById('pages');
     for (const x of ALL) {
       const s = document.createElement('section');
