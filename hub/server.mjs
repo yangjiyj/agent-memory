@@ -1893,6 +1893,7 @@ async function main() {
     // [D] 参数位
     //
     // [E] 参数位
+    searchMemory: search, byUpdated,
     //
     share, scopeOf, // [F] 参数位
   });

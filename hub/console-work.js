@@ -497,6 +497,7 @@
       try { ps = await Console.api('/browse/projects'); } catch (e) { Console.toast(e.message, 'err'); }
       $('hoProj').innerHTML = `<option value="">（按关键词）</option>${ps.slice(0, 40).map((x) => `<option value="${esc(x.p)}">${esc(x.p)}（${x.n}）</option>`).join('')}`;
       if (ps[0]) $('hoProj').value = ps[0].p;
+      applyProject();
       $('hoShare').onclick = () => Console.share?.open($('hoProj').value);
       const syncShare = () => { $('hoShare').disabled = !$('hoProj').value; };
       $('hoProj').addEventListener('change', syncShare); syncShare();
@@ -512,6 +513,18 @@
         try { await navigator.clipboard.writeText($('hoOut').value); } catch { document.execCommand('copy'); }
         $('hoCopy').textContent = '已复制'; setTimeout(() => { $('hoCopy').textContent = '复制'; }, 1500);
       };
+    }
+
+    // #/projects/<项目名>（全局搜索跳进来）：交接包里选中这个项目并滚到那一块；下拉是异步填的，没填好就等 initHandoff 回头再调
+    let wantProject = '';
+    function applyProject() {
+      const sel = root && $('hoProj');
+      if (!wantProject || !sel || sel.options.length < 2) return;
+      if (![...sel.options].some((o) => o.value === wantProject)) sel.insertAdjacentHTML('beforeend', `<option value="${esc(wantProject)}">${esc(wantProject)}</option>`);
+      sel.value = wantProject; wantProject = '';
+      const panel = sel.closest('.panel');
+      panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      panel.classList.add('gs-flash'); setTimeout(() => panel.classList.remove('gs-flash'), 1800);
     }
 
     function draw() { renderRiver(); renderRank(); renderSankey(); }
@@ -541,7 +554,7 @@
           </section>`;
         initHandoff();
       },
-      async show() { DATA = await Console.loadData(); if (DATA) draw(); },
+      async show(params) { wantProject = params?.arg || ''; DATA = await Console.loadData(); if (DATA) draw(); applyProject(); },
       hide() { tip.hide(); },
       resize() { if (DATA) draw(); },
     });
