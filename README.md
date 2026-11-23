@@ -50,6 +50,8 @@
 
 ## 组成
 
+![架构：各台机器上的智能体经设备端接到中心，浏览器控制台和抽取机也接在中心上](docs/topology.svg)
+
 ```
 agent/kb-agent.mjs     设备端（每台机器一份）：同步记忆、上传对话、写摘要、stdio MCP 代理、自动升级
 hub/                   中心：server.mjs（HTTP + MCP）、convlog（对话存档/日志）、extras（交接包/待办/图谱/语义搜索…）

@@ -37,6 +37,8 @@ Claude Code, Codex, WorkBuddy / WorkBuddy AI, CodeBuddy, Hermes, OpenClaw, OpenC
 
 ## Layout
 
+![Architecture: agents on every machine connect to the hub through the device agent; the browser console and the worker talk to the hub too](docs/topology.en.svg)
+
 ```
 agent/kb-agent.mjs   device agent: sync memory, upload conversations, write digests, stdio MCP proxy, self-update
 hub/                 hub: server.mjs (HTTP + MCP), convlog (archive/journal), extras (handoff/todos/graph/semantic…), admin.mjs (console admin API under /console/api), console.html + console*.css/js (console), wall.html (wall display), wrapped.html (year in review)

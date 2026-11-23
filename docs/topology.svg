@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="agent-memory 架构：各台机器上的智能体通过设备端接到中心，中心把记忆和对话存进 git 仓库和存档，浏览器控制台和抽取机也接在中心上">
+<defs>
+  <radialGradient id="g1" cx="12%" cy="0%" r="70%"><stop offset="0" stop-color="#3987e5" stop-opacity=".30"/><stop offset="1" stop-color="#3987e5" stop-opacity="0"/></radialGradient>
+  <radialGradient id="g2" cx="95%" cy="10%" r="60%"><stop offset="0" stop-color="#9085e9" stop-opacity=".24"/><stop offset="1" stop-color="#9085e9" stop-opacity="0"/></radialGradient>
+  <radialGradient id="g3" cx="50%" cy="110%" r="60%"><stop offset="0" stop-color="#199e70" stop-opacity=".18"/><stop offset="1" stop-color="#199e70" stop-opacity="0"/></radialGradient>
+  <radialGradient id="hub" cx="50%" cy="40%" r="75%"><stop offset="0" stop-color="#2b63b8" stop-opacity=".55"/><stop offset="1" stop-color="#111930" stop-opacity=".9"/></radialGradient>
+  <linearGradient id="ln" gradientUnits="userSpaceOnUse" x1="330" y1="0" x2="880" y2="0"><stop offset="0" stop-color="#86b6ef"/><stop offset="1" stop-color="#9085e9"/></linearGradient>
+  <linearGradient id="ttl" x1="0" x2="1"><stop offset="0" stop-color="#e8ecf6"/><stop offset=".55" stop-color="#86b6ef"/><stop offset="1" stop-color="#9085e9"/></linearGradient>
+  <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#9ec5f4"/></marker>
+  <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#94a3b8" stroke-opacity=".07"/></pattern>
+</defs>
+<style>
+  text { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", "Noto Sans SC", sans-serif; fill: #e8ecf6; }
+  .sec { font-size: 12px; fill: #6f7a99; letter-spacing: 1px; }
+  .h { font-size: 15px; font-weight: 600; }
+  .s { font-size: 12px; fill: #a3aecb; }
+  .m { font-size: 11.5px; fill: #6f7a99; }
+  .pill { fill: #0b1020; fill-opacity: .7; stroke: #6e96ff; stroke-opacity: .3; }
+  .pt { font-size: 11.5px; fill: #cde2fb; }
+  .card { fill: #111930; fill-opacity: .78; stroke: #6e96ff; stroke-opacity: .22; }
+  .opt { fill: #111930; fill-opacity: .45; stroke: #6e96ff; stroke-opacity: .35; stroke-dasharray: 5 5; }
+  .wire { fill: none; stroke: url(#ln); stroke-width: 1.6; stroke-opacity: .8; }
+  .flow { fill: none; stroke: #cde2fb; stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 2 22; animation: f 2.4s linear infinite; }
+  .flow.r { animation-direction: reverse; }
+  .dot { fill: #0ca30c; }
+  @keyframes f { to { stroke-dashoffset: -48; } }
+  @media (prefers-reduced-motion: reduce) { .flow { animation: none; } }
+</style>
+<rect width="1200" height="640" rx="18" fill="#0b1020"/>
+<rect width="1200" height="640" rx="18" fill="url(#grid)"/>
+<rect width="1200" height="640" rx="18" fill="url(#g1)"/><rect width="1200" height="640" rx="18" fill="url(#g2)"/><rect width="1200" height="640" rx="18" fill="url(#g3)"/>
+
+<text x="40" y="48" font-size="22" font-weight="700" fill="url(#ttl)">agent-memory</text>
+<text x="212" y="48" class="s">所有机器、所有智能体，共用一份记忆</text>
+
+<text x="40" y="92" class="sec">你的机器</text>
+<text x="528" y="92" class="sec">中心</text>
+<text x="880" y="92" class="sec">谁在用它</text>
+
+<!-- 连线：设备 → 网关 → 中心 -->
+<path class="wire" d="M330 164 C366 164 362 250 392 250"/><path class="flow" d="M330 164 C366 164 362 250 392 250"/>
+<path class="wire" d="M330 304 L392 304"/><path class="flow" d="M330 304 L392 304"/>
+<path class="wire" d="M330 444 C366 444 362 358 392 358"/><path class="flow" d="M330 444 C366 444 362 358 392 358"/>
+<path class="wire" d="M440 280 L534 280" marker-end="url(#ar)"/><path class="flow" d="M440 280 L534 280"/>
+<path class="wire" d="M540 328 L446 328" marker-end="url(#ar)"/><path class="flow" d="M540 328 L446 328"/>
+<text x="488" y="268" text-anchor="middle" class="m">记忆 · 对话</text>
+<text x="488" y="350" text-anchor="middle" class="m">摘要 · 查询</text>
+
+<!-- 连线：中心 → 右侧 -->
+<path class="wire" d="M772 250 C826 250 826 164 876 164" marker-start="url(#ar)"/><path class="flow r" d="M772 250 C826 250 826 164 876 164"/>
+<path class="wire" d="M772 304 L876 304" marker-start="url(#ar)" marker-end="url(#ar)"/><path class="flow" d="M772 304 L876 304"/>
+<path class="wire" d="M772 358 C826 358 826 444 876 444" marker-end="url(#ar)" stroke-dasharray="5 5"/>
+<!-- 连线：中心 → 存储 -->
+<path class="wire" d="M588 408 L588 462"/><path class="wire" d="M732 408 L732 462"/>
+
+<!-- 设备 -->
+<rect class="card" x="40" y="110" width="290" height="108" rx="14"/>
+<circle class="dot" cx="60" cy="134" r="4"/><text x="72" y="139" class="h">台式机</text>
+<rect class="pill" x="60" y="154" width="92" height="24" rx="12"/><text x="106.0" y="170" text-anchor="middle" class="pt">Claude Code</text>
+<rect class="pill" x="160" y="154" width="49" height="24" rx="12"/><text x="184.5" y="170" text-anchor="middle" class="pt">Codex</text>
+<rect class="pill" x="217" y="154" width="56" height="24" rx="12"/><text x="245.0" y="170" text-anchor="middle" class="pt">Cursor</text>
+<text x="60" y="200" class="m">kb-agent.mjs · 同步记忆 · 上传对话 · MCP 代理</text>
+<rect class="card" x="40" y="250" width="290" height="108" rx="14"/>
+<circle class="dot" cx="60" cy="274" r="4"/><text x="72" y="279" class="h">笔记本</text>
+<rect class="pill" x="60" y="294" width="92" height="24" rx="12"/><text x="106.0" y="310" text-anchor="middle" class="pt">Claude Code</text>
+<rect class="pill" x="160" y="294" width="77" height="24" rx="12"/><text x="198.5" y="310" text-anchor="middle" class="pt">WorkBuddy</text>
+<rect class="pill" x="245" y="294" width="70" height="24" rx="12"/><text x="280.0" y="310" text-anchor="middle" class="pt">OpenCode</text>
+<text x="60" y="340" class="m">kb-agent.mjs · 同步记忆 · 上传对话 · MCP 代理</text>
+<rect class="card" x="40" y="390" width="290" height="108" rx="14"/>
+<circle class="dot" cx="60" cy="414" r="4"/><text x="72" y="419" class="h">服务器</text>
+<rect class="pill" x="60" y="434" width="56" height="24" rx="12"/><text x="88.0" y="450" text-anchor="middle" class="pt">Hermes</text>
+<rect class="pill" x="124" y="434" width="70" height="24" rx="12"/><text x="159.0" y="450" text-anchor="middle" class="pt">OpenClaw</text>
+<rect class="pill" x="202" y="434" width="85" height="24" rx="12"/><text x="244.5" y="450" text-anchor="middle" class="pt">Gemini CLI</text>
+<text x="60" y="480" class="m">kb-agent.mjs · 同步记忆 · 上传对话 · MCP 代理</text>
+
+<!-- 网关（可选） -->
+<rect class="opt" x="392" y="110" width="48" height="388" rx="12"/>
+<text transform="translate(421 304) rotate(-90)" text-anchor="middle" class="h" font-size="13">认证网关 am-gate</text>
+<text x="416" y="522" text-anchor="middle" class="m">可选</text>
+
+<!-- 中心 -->
+<g filter="url(#glow)"><rect x="540" y="200" width="232" height="208" rx="18" fill="url(#hub)" stroke="#86b6ef" stroke-opacity=".6"/></g>
+<circle class="dot" cx="562" cy="228" r="4"/>
+<text x="574" y="233" class="h" font-size="17">中心 hub</text>
+<text x="562" y="256" class="s">hub/server.mjs · Node.js</text>
+<rect class="pill" x="562" y="272" width="90" height="26" rx="13"/><text x="607" y="289" text-anchor="middle" class="pt">HTTP API</text>
+<rect class="pill" x="660" y="272" width="90" height="26" rx="13"/><text x="705" y="289" text-anchor="middle" class="pt">MCP</text>
+<text x="562" y="326" class="s">共享记忆 · 搜索 · 按意思搜</text>
+<text x="562" y="348" class="s">对话存档 · 工作日志 · 时间线</text>
+<text x="562" y="370" class="s">交接包 · 待办 · 知识图谱</text>
+<text x="562" y="392" class="s">设备策略 · 审计</text>
+
+<!-- 存储 -->
+<rect class="card" x="520" y="462" width="136" height="64" rx="12"/>
+<text x="536" y="488" class="h" font-size="13">记忆仓库</text><text x="536" y="508" class="m">git · 一条一个 md</text>
+<rect class="card" x="664" y="462" width="136" height="64" rx="12"/>
+<text x="680" y="488" class="h" font-size="13">对话存档</text><text x="680" y="508" class="m">jsonl · 长期保存</text>
+
+<!-- 右侧 -->
+<rect class="card" x="880" y="110" width="280" height="108" rx="14"/>
+<text x="900" y="138" class="h">浏览器</text>
+<rect class="pill" x="900" y="152" width="112" height="24" rx="12"/><text x="956" y="168" text-anchor="middle" class="pt">控制台 /console</text>
+<rect class="pill" x="1020" y="152" width="120" height="24" rx="12"/><text x="1080" y="168" text-anchor="middle" class="pt">大屏 /wall</text>
+<text x="900" y="200" class="m">另有年度报告和候选审批页</text>
+
+<rect class="card" x="880" y="250" width="280" height="108" rx="14"/>
+<text x="900" y="278" class="h">抽取机 worker</text>
+<text x="900" y="302" class="s">journal.mjs  每段会话写一句日志</text>
+<text x="900" y="322" class="s">extract.mjs  从会话里抽候选记忆</text>
+<text x="900" y="344" class="m">任意一台能跑 Codex CLI 的机器</text>
+
+<rect class="opt" x="880" y="390" width="280" height="108" rx="14"/>
+<text x="900" y="418" class="h">周边</text>
+<text x="900" y="442" class="s">am-embed  本地向量服务（按意思搜）</text>
+<text x="900" y="462" class="s">report.py  日报 / 周报，推到 IM</text>
+<text x="900" y="484" class="m">可选</text>
+
+<text x="40" y="606" class="m">设备端每 10 分钟同步一次；没有 MCP 的场合用命令行 kb-agent.mjs search | timeline | handoff …</text>
+</svg>
