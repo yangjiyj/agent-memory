@@ -108,6 +108,8 @@ def identify(ip):
 
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    # 响应头和正文是分两次写的：不关 Nagle 的话，第二次写要等浏览器的延迟 ACK，每个请求白白多 40ms
+    disable_nagle_algorithm = True
 
     def log_message(self, fmt, *args):  # 只记错误，正常请求不刷屏
         pass

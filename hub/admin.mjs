@@ -20,9 +20,11 @@
  *
  * 浏览者那台设备设了 hide_projects 时，上面各接口都不给被隐藏项目的内容（口径见 server.mjs 的 scopeOf，和 MCP 工具里的 visible() 一致）；
  * 这样的浏览者也不能改任何设备的 hide_projects（否则自己清掉就绕过去了）。
+ *   GET  boot               首屏汇总：?page=<页面 id>，一次返回外壳启动和该页首屏要的 GET 数据 { prime: { "<URL>": 内容 } }（清单见 perf.mjs）
  */
 
 import fs from 'node:fs';
+import { bootPlan } from './perf.mjs';
 // 各功能的接口放在自己的 admin-<名字>.mjs 里，在这里 import；每组只改自己那一行（占位行之间隔着空行，合并时互不冲突）
 // [B] import 位
 //
@@ -556,6 +558,16 @@ export function createAdmin(ctx) {
     return r;
   }
 
+  // ---- boot ----
+  // 首屏汇总：外壳启动要的和该页首屏要的 GET 数据一次返回，省掉一串请求（清单见 perf.mjs 的 BOOT_SHELL / BOOT_PAGES）。
+  // 每一项都经 internalGet 走和浏览器单独请求时同一套路由：身份校验、返回字段都一样，别的接口加了字段这里自动跟上；
+  // 取失败的项直接略过，页面照常自己再取。清单是服务端写死的，客户端不能指定要取什么。
+  async function boot(req, q) {
+    const plan = bootPlan(q.get('page') || '');
+    const got = await Promise.all(plan.map(async (u) => [u, await ctx.internalGet(req, u)]));
+    return { prime: Object.fromEntries(got.filter(([, r]) => r.status === 200).map(([u, r]) => [u, r.body])) };
+  }
+
   // ---- 扩展接口 ----
   // 每个 admin-<名字>.mjs 导出 createXxx(ctx, kit)，返回 { handle(req, res, url, sub, viewer) }：认领了这个请求就返回 true，否则返回 undefined。
   // kit 里是核心的小工具；出错抛 kit.HttpError / kit.bad，由下面的 handle 统一变成 4xx 和中文 error。
@@ -596,6 +608,7 @@ export function createAdmin(ctx) {
       if (sub === 'jobs') { only('GET'); return send(res, 200, await jobs(scope)); }
       if (sub === 'topology') { only('GET'); return send(res, 200, await topology(viewer, req)); }
       if (sub === 'topology/events') { only('GET'); return send(res, 200, events(q, scope)); }
+      if (sub === 'boot') { only('GET'); return send(res, 200, await boot(req, q)); }
       if (sub === 'settings') {
         if (method === 'GET') return send(res, 200, settingsView());
         only('POST');
