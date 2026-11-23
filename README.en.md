@@ -4,7 +4,7 @@
 
 [中文](README.md)
 
-![Overview: work galaxy and live war room](docs/screenshots/overview.jpg)
+![Demo: overview, global search, timeline, live topology, memory details](docs/screenshots/demo.en.gif)
 
 You use Claude Code on the desktop, Codex on the laptop, Hermes / OpenClaw on a server, WorkBuddy now and then… each agent remembers on its own, and switching tools or machines means starting from zero. agent-memory is a small self-hosted service that ties them together:
 
