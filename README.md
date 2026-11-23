@@ -4,12 +4,23 @@
 
 [English](README.en.md)
 
+![概览：工作星系和实时作战室](docs/screenshots/overview.jpg)
+
 你在台式机上用 Claude Code、笔记本上用 Codex、服务器上跑着 Hermes / OpenClaw、偶尔开 WorkBuddy……每个智能体各记各的，换个工具、换台机器就什么都不知道了。agent-memory 是一个自己部署的小服务，把它们接到一起：
 
 - **共享记忆**：各智能体自带的记忆文件（Claude Code 的 memory、Hermes 的 USER.md、WorkBuddy 的 MEMORY.md…）自动同步到中心；任何智能体都能通过 MCP 工具查、写；每个工具的指令文件里自动放一份摘要（偏好、项目现状、最近在做什么）。
 - **对话存档 + 工作日志**：所有智能体的对话（只留你和助手说的话，密钥自动打码）增量上传、长期存档；每天用一个便宜的模型给每个会话写一句"这天做了什么"。任何机器上问"上周四干了什么""那个部署是哪天做的"都能答。
 - **控制台**：浏览器打开中心地址就是控制台（`/console`），一个侧栏管全部——概览（旋转的"工作星系"、实时作战室、需要处理的事）；记忆库（搜索、筛选、编辑、作废）、待整理（待审候选、疑似重复、过期现状）、知识图谱；时间线（工作日历、当天各机器各智能体的泳道、作息、大事记）、项目、待办、对话存档（搜原话、读原文）；设备（只读、隐藏项目、加入码）、智能体状态、MCP（工具开关和调用量）；审计、任务状态、设置。另有自动巡航的大屏（`/wall`）和年度报告（`/w`）。
 - **零依赖**：中心和设备端都是单个 Node.js 文件（Node ≥ 18），不需要数据库；数据是 git 仓库里一条一个 markdown 文件，随时能看、能备份、能回滚。
+
+| | | |
+|---|---|---|
+| [![时间线](docs/screenshots/timeline.jpg)](docs/screenshots/timeline.jpg) | [![项目](docs/screenshots/projects.jpg)](docs/screenshots/projects.jpg) | [![记忆库](docs/screenshots/memory.jpg)](docs/screenshots/memory.jpg) |
+| 时间线：工作日历和当天各机器的泳道 | 项目：河流图和机器到智能体到项目的流向 | 记忆库：筛选、搜索，右边看详情 |
+| [![设备](docs/screenshots/devices.jpg)](docs/screenshots/devices.jpg) | [![MCP](docs/screenshots/mcp.jpg)](docs/screenshots/mcp.jpg) | [![大屏](docs/screenshots/wall.jpg)](docs/screenshots/wall.jpg) |
+| 设备：同步状态、只读、隐藏项目 | MCP：工具开关和 7 天调用量 | 大屏：自动巡航，适合挂在墙上 |
+
+> 截图用的是 `scripts/demo-data.mjs` 生成的虚构数据。
 
 > 作者自己每天在 8 台机器、7 种智能体上用。代码以"能用、好改"为先，注释是中文。
 
@@ -48,6 +59,16 @@ gateway/am-gate.py     可选：认证网关，按 Tailscale 机器名 / libvirt
 gateway/am-embed.py    可选：本地向量服务（fastembed + bge-small-zh），给"按意思搜"用
 deploy/                systemd 单元示例
 scripts/report.py      日报/周报：打印成文本，交给你的定时任务推到 IM
+```
+
+## 先看看长什么样
+
+不接任何设备，生成一套虚构的演示数据就能看到控制台：
+
+```bash
+node scripts/demo-data.mjs /tmp/am-demo          # 生成数据目录和 config.json（目录必须不存在或为空）
+AGENT_MEMORY_CONFIG=/tmp/am-demo/config.json node hub/server.mjs
+# 浏览器打开 http://127.0.0.1:8790/
 ```
 
 ## 快速开始
