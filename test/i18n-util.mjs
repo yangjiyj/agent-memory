@@ -4,8 +4,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 
-export const HUB = path.resolve(import.meta.dirname, '../hub');
+export const HUB = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../hub'); // Node 18 没有 import.meta.dirname
 export const ENGINE = 'console-i18n.js';
 export const DICTS = ['console-i18n-ui.js', 'console-i18n-srv.js'];
 
