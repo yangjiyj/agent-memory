@@ -72,6 +72,8 @@
   const GAL = { yaw: 0.6, pitch: 0.42, zoom: 1, drag: null, pts: [], proj: [], hover: -1, labels: [], bg: [], loadedAt: 0 };
   let galCv; let galG;
   const dprOf = () => devicePixelRatio || 1;
+  const clusterColor = (c) => (c === '其他' ? Console.css('--other-lt') : colorOf(c));
+  const blend = () => (Console.theme?.resolved() === 'light' ? 'source-over' : 'lighter'); // 浅底上不能用叠加（lighter 会洗成一片白）
   function buildGalaxy(data) {
     const TOP = Console.top();
     const clusters = [...TOP, '其他'];
@@ -87,18 +89,25 @@
       const R = isCore ? 0 : 400;
       const cx = Math.cos(a0) * R; const cz = Math.sin(a0) * R;
       const size = 34 + 100 * Math.sqrt(list.length / maxN);
-      const color = isCore ? '#8b93a8' : colorOf(c);
+      const color = clusterColor(c);
       GAL.labels.push({ c, n: list.length, x: cx, y: -size * 0.35 - 18, z: cz, color });
       list.forEach((r, k) => {
         const t = list.length > 1 ? k / (list.length - 1) : 0;
         const arm = k % 2; const ang = Math.sqrt(t) * Math.PI * 3.2 + arm * Math.PI + a0;
         const rad = 6 + size * Math.sqrt(t) + gauss() * (3 + 6 * t);
         GAL.pts.push({ x: cx + Math.cos(ang) * rad + gauss() * 4, y: gauss() * (10 * (1 - t) + 3), z: cz + Math.sin(ang) * rad + gauss() * 4,
-          color, s: 0.45 + Math.log2((r[5] || 1) + 1) * 0.2, r });
+          color, cl: c, s: 0.45 + Math.log2((r[5] || 1) + 1) * 0.2, r });
       });
     });
-    $('galLegend').innerHTML = clusters.map((c) => `<span><b style="background:${c === '其他' ? '#8b93a8' : colorOf(c)}"></b>${esc(c)} ${groups.get(c).length}</span>`).join('');
+    galLegend();
     GAL.loadedAt = Date.now();
+  }
+  const galLegend = () => { $('galLegend').innerHTML = GAL.labels.map((l) => `<span><b style="background:${l.color}"></b>${esc(l.c)} ${l.n}</span>`).join(''); };
+  // 换主题：星点、簇标签、图例按簇名重新取色（位置不动）
+  function recolorGalaxy() {
+    for (const p of GAL.pts) p.color = clusterColor(p.cl);
+    for (const l of GAL.labels) l.color = clusterColor(l.c);
+    if (GAL.labels.length) galLegend();
   }
   async function loadGalaxy() { buildGalaxy(await Console.api('/browse/viz-galaxy')); }
   const F = 900;
@@ -107,7 +116,7 @@
     if (!GAL.drag) GAL.yaw += 0.0018;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, W, H);
-    for (const b of GAL.bg) { g.fillStyle = `rgba(205,226,251,${b.a * 0.5})`; g.beginPath(); g.arc(b.x * W, b.y * H, b.r * dpr, 0, 6.283); g.fill(); }
+    for (const b of GAL.bg) { g.fillStyle = Console.rgba('--star-rgb', b.a * 0.5); g.beginPath(); g.arc(b.x * W, b.y * H, b.r * dpr, 0, 6.283); g.fill(); }
     const cy = Math.cos(GAL.yaw); const sy = Math.sin(GAL.yaw); const cp = Math.cos(GAL.pitch); const sp = Math.sin(GAL.pitch);
     const k = Math.min(W * 0.62, H) / 900 * GAL.zoom;
     const project = (p) => {
@@ -116,7 +125,7 @@
       const sc = F / (F + z2) * k;
       return [W / 2 + x1 * sc, H * 0.46 + y2 * sc, sc, z2];
     };
-    g.globalCompositeOperation = 'lighter';
+    g.globalCompositeOperation = blend();
     GAL.proj = new Array(GAL.pts.length);
     for (let i = 0; i < GAL.pts.length; i++) {
       const p = GAL.pts[i]; const [x, y, sc] = project(p);
@@ -130,8 +139,8 @@
     g.textAlign = 'center';
     for (const l of GAL.labels) {
       const [x, y] = project(l);
-      g.font = `${12 * dpr}px ${fam}`; g.fillStyle = 'rgba(232,236,246,.92)'; g.fillText(l.c, x, y - 6 * dpr);
-      g.font = `${10.5 * dpr}px ${fam}`; g.fillStyle = 'rgba(163,174,203,.75)'; g.fillText(`${l.n} 个会话`, x, y + 8 * dpr);
+      g.font = `${12 * dpr}px ${fam}`; g.fillStyle = Console.rgba('--text-rgb', 0.92); g.fillText(l.c, x, y - 6 * dpr);
+      g.font = `${10.5 * dpr}px ${fam}`; g.fillStyle = Console.rgba('--text2-rgb', 0.75); g.fillText(`${l.n} 个会话`, x, y + 8 * dpr);
     }
   }
   function initGalaxy() {
@@ -172,7 +181,7 @@
       const tools = Object.entries(d.devices[n] || {}).sort((a, b) => String(b[1].last).localeCompare(String(a[1].last)));
       const active = tools.filter(([, t]) => t.age <= 20);
       const syncAge = d.sync[n].last_seen ? (Date.now() - Date.parse(d.sync[n].last_seen)) / 60000 : 1e9;
-      return { n, i, total: names.length, tools, active, syncOk: syncAge < 15, syncAge, color: active[0] ? colorOf(active[0][1].project || '其他') : '#5b6478' };
+      return { n, i, total: names.length, tools, active, syncOk: syncAge < 15, syncAge, pr: active[0] ? (active[0][1].project || '其他') : '', color: active[0] ? colorOf(active[0][1].project || '其他') : Console.OTHER };
     });
     $('liveBar').innerHTML = `<div><b>${d.today.segments}</b> <span>段会话（今天）</span></div><div><b>${d.today.messages.toLocaleString()}</b> <span>条消息</span></div><div><b>${LIVE.nodes.filter((x) => x.active.length).length}</b><span> / ${LIVE.nodes.length} 台正在干活</span></div>`;
     $('feed').innerHTML = d.recent.map((r) => `<div><i>${esc(date.ago(r.t))}</i><span>${esc(dev(r.device))} · ${esc(tool(r.tool))} <em>「${esc(r.title)}」</em></span></div>`).join('');
@@ -187,13 +196,13 @@
     const pos = LIVE.nodes.map((nd) => { const a = (nd.i / nd.total) * Math.PI * 2 - Math.PI / 2; return [cx + Math.cos(a) * rx, cyy + Math.sin(a) * ry]; });
     LIVE.nodes.forEach((nd, i) => {
       const [x, y] = pos[i];
-      g.strokeStyle = nd.active.length ? `${nd.color}aa` : 'rgba(148,163,184,.16)'; g.lineWidth = (nd.active.length ? 1.6 : 1) * dpr;
+      g.strokeStyle = nd.active.length ? `${nd.color}aa` : Console.rgba('--slate-rgb', 0.16); g.lineWidth = (nd.active.length ? 1.6 : 1) * dpr;
       g.setLineDash(nd.syncOk ? [] : [4 * dpr, 4 * dpr]);
       g.beginPath(); g.moveTo(x, y); g.lineTo(cx, cyy); g.stroke();
       g.setLineDash([]);
       if (nd.active.length && Math.random() < 0.12) LIVE.particles.push({ i, t: 0, v: 0.008 + Math.random() * 0.01, c: nd.color });
     });
-    g.globalCompositeOperation = 'lighter';
+    g.globalCompositeOperation = blend();
     LIVE.particles = LIVE.particles.filter((p) => p.t < 1);
     for (const p of LIVE.particles) {
       p.t += p.v; const [x, y] = pos[p.i] || [cx, cyy];
@@ -205,9 +214,9 @@
     const fam = '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
     const pulse = 1 + 0.08 * Math.sin(LIVE.t / 18);
     const grd = g.createRadialGradient(cx, cyy, 0, cx, cyy, 46 * dpr * pulse);
-    grd.addColorStop(0, 'rgba(158,197,244,.95)'); grd.addColorStop(0.35, 'rgba(57,135,229,.55)'); grd.addColorStop(1, 'rgba(57,135,229,0)');
+    grd.addColorStop(0, Console.rgba('--hub-core-rgb', 0.95)); grd.addColorStop(0.35, Console.rgba('--hub-glow-rgb', 0.55)); grd.addColorStop(1, Console.rgba('--hub-glow-rgb', 0));
     g.fillStyle = grd; g.beginPath(); g.arc(cx, cyy, 46 * dpr * pulse, 0, 6.283); g.fill();
-    g.font = `600 ${12 * dpr}px ${fam}`; g.textAlign = 'center'; g.fillStyle = '#0b1020';
+    g.font = `600 ${12 * dpr}px ${fam}`; g.textAlign = 'center'; g.fillStyle = Console.css('--hub-text');
     g.fillText('共享记忆', cx, cyy - 2 * dpr);
     g.font = `${10 * dpr}px ${fam}`; g.fillText(`${LIVE.data?.memories || ''} 条`, cx, cyy + 11 * dpr);
     LIVE.nodes.forEach((nd, i) => {
@@ -216,13 +225,13 @@
         const rr = (12 + 6 * Math.sin(LIVE.t / 12 + i)) * dpr;
         g.strokeStyle = nd.color; g.globalAlpha = 0.5; g.lineWidth = 2 * dpr; g.beginPath(); g.arc(x, y, rr + 6 * dpr, 0, 6.283); g.stroke(); g.globalAlpha = 1;
       }
-      g.fillStyle = nd.active.length ? nd.color : '#2a3247'; g.beginPath(); g.arc(x, y, 9 * dpr, 0, 6.283); g.fill();
-      g.fillStyle = nd.syncOk ? '#0ca30c' : '#d03b3b'; g.beginPath(); g.arc(x + 8 * dpr, y - 8 * dpr, 3 * dpr, 0, 6.283); g.fill();
+      g.fillStyle = nd.active.length ? nd.color : Console.css('--node-idle'); g.beginPath(); g.arc(x, y, 9 * dpr, 0, 6.283); g.fill();
+      g.fillStyle = nd.syncOk ? Console.css('--ok') : Console.css('--bad'); g.beginPath(); g.arc(x + 8 * dpr, y - 8 * dpr, 3 * dpr, 0, 6.283); g.fill();
       const below = y > cyy;
-      g.textAlign = 'center'; g.fillStyle = '#e8ecf6'; g.font = `600 ${11.5 * dpr}px ${fam}`;
+      g.textAlign = 'center'; g.fillStyle = Console.css('--text-primary'); g.font = `600 ${11.5 * dpr}px ${fam}`;
       const ly = below ? y + 24 * dpr : y - 18 * dpr;
       g.fillText(dev(nd.n), x, ly);
-      g.font = `${10.5 * dpr}px ${fam}`; g.fillStyle = 'rgba(163,174,203,.9)';
+      g.font = `${10.5 * dpr}px ${fam}`; g.fillStyle = Console.rgba('--text2-rgb', 0.9);
       const t0 = nd.tools[0];
       const sub = nd.active.length ? `${tool(nd.active[0][0])} · ${nd.active[0][1].project || '在干活'}` : t0 ? `${tool(t0[0])} ${Console.t(date.ago(t0[1].last))}` : (nd.syncOk ? '在线' : '没同步');
       g.fillText(sub, x, ly + (below ? 13 : -13) * dpr);
@@ -243,15 +252,15 @@
         a0 = a1;
         return `<path d="${d2}" fill="${SLOTS[i % 7]}"><title>${esc(ZH.origin[x[0]] || x[0])}：${x[1]}</title></path>`;
       }).join('');
-      return `<svg width="128" height="128" viewBox="0 0 128 128" style="flex:none;filter:drop-shadow(0 0 8px rgba(57,135,229,.35))">${arcs}</svg>`;
+      return `<svg width="128" height="128" viewBox="0 0 128 128" style="flex:none;filter:drop-shadow(0 0 8px var(--glow))">${arcs}</svg>`;
     };
     const bars = (pairs, label, color) => { const max = (pairs[0] && pairs[0][1]) || 1; return pairs.map((x) => `<div class="b"><span class="lab">${esc(label(x[0]))}</span><span class="track"><span class="fill" style="background:${color};color:${color};width:${(100 * x[1]) / max}%"></span></span><span class="n">${x[1]}</span></div>`).join(''); };
     const srcLabel = (k) => { const ab = k.split('/'); return `${dev(ab[0])} · ${tool(ab[1])}`; };
     $('mem').innerHTML = `<div><h3>有效记忆</h3><div class="tot">${m.total.toLocaleString()}</div>`
       + `<div class="st">${m.byState.map((x) => `<span class="pill ${x[0] === 'active' ? 'ok' : x[0] === 'proposed' ? 'warn' : 'dim'}">${esc(ZH.state[x[0]] || x[0])} ${x[1]}</span>`).join('')}</div>`
       + `<div style="display:flex;gap:12px;align-items:center">${donut(m.byOrigin)}<div class="legend" style="flex-direction:column;gap:4px">${m.byOrigin.map((x, i) => `<span><b style="background:${SLOTS[i % 7]}"></b>${esc(ZH.origin[x[0]] || x[0])} ${x[1]}</span>`).join('')}</div></div></div>`
-      + `<div class="bars"><h3>按类型</h3>${bars(m.byType, (k) => ZH.type[k] || k, '#3987e5')}<h3 style="margin-top:12px">按项目</h3>${bars(m.byProject.filter((x) => x[0] !== '（无）').slice(0, 7), (k) => k, '#9085e9')}</div>`
-      + `<div class="bars"><h3>按来源（机器 · 智能体）</h3>${bars(m.bySource.slice(0, 12), srcLabel, '#199e70')}</div>`
+      + `<div class="bars"><h3>按类型</h3>${bars(m.byType, (k) => ZH.type[k] || k, 'var(--s1)')}<h3 style="margin-top:12px">按项目</h3>${bars(m.byProject.filter((x) => x[0] !== '（无）').slice(0, 7), (k) => k, 'var(--s7)')}</div>`
+      + `<div class="bars"><h3>按来源（机器 · 智能体）</h3>${bars(m.bySource.slice(0, 12), srcLabel, 'var(--s3)')}</div>`
       + `<div class="rec"><h3>最近更新的记忆</h3>${m.recent.map((e) => `<div><i>${esc(ZH.type[e.type] || e.type)}</i><span>${esc(e.title)}<em>${esc(e.project ? `${e.project} · ` : '')}${esc(date.ago(e.updated))}</em></span></div>`).join('')}</div>`;
   }
   async function loadMemory() { try { renderMemory(await Console.api('/browse/viz-agents', { ttl: 20000 })); } catch (e) { console.warn(e); } }
@@ -309,5 +318,11 @@
     },
     hide() { cancelAnimationFrame(raf); raf = 0; GAL.hover = -1; tip.hide(); },
     resize() { fit(); },
+    theme() {
+      recolorGalaxy();
+      for (const nd of LIVE.nodes) nd.color = nd.pr ? colorOf(nd.pr) : Console.OTHER;
+      loadMemory();
+      if (!raf) { drawGalaxy(); drawLive(); }
+    },
   });
 })();

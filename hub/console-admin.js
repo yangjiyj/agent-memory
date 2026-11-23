@@ -316,7 +316,7 @@
             <span class="adm-lab">Windows PowerShell</span><div class="adm-code"><code>${h(j.ps1)}</code>${copyBtn(j.ps1)}</div>`;
           btn.textContent = '重新生成';
           listCodes();
-        } catch (e) { out.innerHTML = `<p style="color:#f08a8a">${h(e.message)}</p>`; }
+        } catch (e) { out.innerHTML = `<p style="color:var(--t-red)">${h(e.message)}</p>`; }
         btn.disabled = false;
         return false;
       }

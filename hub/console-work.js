@@ -1,7 +1,7 @@
 /* 工作类页面：时间线（日历、当天泳道、作息、大事记、回放）、项目（河流、排行、流向图、交接包）、待办（待办雷达）。
  * 图都按容器宽度画，所以只在页面显示时画，窗口尺寸变化时重画。 */
 (function () {
-  const { esc, dev, tool, date, tip, SEQ, OTHER } = Console;
+  const { esc, dev, tool, date, tip, SEQ } = Console; // OTHER 随主题变（getter），用到时读 Console.OTHER，别在这里解构
   const el = Console.svg;
   const colorOf = (p) => Console.color(p);
   const { WEEK, addDays, wd, today: todayStr, minutesOf, hm: fmtHM, weekStart } = date;
@@ -15,7 +15,8 @@
     let root = null;
     const $ = (id) => root.querySelector(`#${id}`);
     let DATA = null; let EXTRA = null; let currentDay = null; let drawnKey = null;
-    let SEARCH = null; const CAL_CELLS = new Map(); const HOT = ['#7a2e10', '#a63d14', '#d95926', '#ec835a', '#f5b08f'];
+    let SEARCH = null; const CAL_CELLS = new Map(); const HOT = [];
+    const loadHot = () => { for (let i = 0; i < 5; i++) HOT[i] = Console.css(`--hot${i + 1}`); }; loadHot();
     let playing = null; let punchTool = 'all'; let msProject = ''; let showSeq = 0;
 
     // ---------------- 工作日历 ----------------
@@ -48,15 +49,15 @@
           }
           const row = DATA.days[d];
           const hits = SEARCH ? SEARCH.dates[d] || 0 : 0;
-          const fill = SEARCH ? (hits ? HOT[Math.min(HOT.length - 1, hits - 1)] : (row ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.025)')) : (row ? shade(row.s) : 'rgba(255,255,255,0.04)');
+          const fill = SEARCH ? (hits ? HOT[Math.min(HOT.length - 1, hits - 1)] : (row ? Console.rgba('--wash-rgb', 0.06) : Console.rgba('--wash-rgb', 0.025))) : (row ? shade(row.s) : Console.rgba('--wash-rgb', 0.04));
           const rect = el('rect', { x, y, width: cell, height: cell, rx: 3, fill, opacity: 0, 'data-d': d, style: 'cursor:pointer;transition:opacity .4s' }, svg);
-          if (SEARCH ? hits : (row && row.s >= cuts[4])) rect.setAttribute('filter', SEARCH ? 'drop-shadow(0 0 4px rgba(236,131,90,.8))' : 'drop-shadow(0 0 3px rgba(134,182,239,.6))');
+          if (SEARCH ? hits : (row && row.s >= cuts[4])) rect.setAttribute('filter', SEARCH ? `drop-shadow(0 0 4px ${Console.rgba('--glow-hot-rgb', 0.8)})` : `drop-shadow(0 0 3px ${Console.rgba('--glow-sky-rgb', 0.6)})`);
           cells.push(rect);
           CAL_CELLS.set(d, rect);
           rect.addEventListener('mousemove', (e) => {
             const ps = row ? Object.entries(row.p).sort((a, b) => b[1] - a[1]).slice(0, 4) : [];
             const head = `<div class="h">${d}（周${WEEK[wd(d)]}）</div>`;
-            const searchLine = SEARCH ? `<div class="r" style="color:#ec835a">${hits ? `${hits} 个会话提到「${esc(SEARCH.q)}」` : `没提到「${esc(SEARCH.q)}」`}</div>` : '';
+            const searchLine = SEARCH ? `<div class="r" style="color:var(--t-hot)">${hits ? `${hits} 个会话提到「${esc(SEARCH.q)}」` : `没提到「${esc(SEARCH.q)}」`}</div>` : '';
             tip.show(e, `${head}${searchLine}${row ? `<div class="r">会话段<em>${row.s}</em></div><div class="r">消息<em>${row.m.toLocaleString()}</em></div>${ps.map(([p, n]) => `<div class="r"><b style="background:${colorOf(p)}"></b>${esc(p)}<em>${n}</em></div>`).join('')}` : '<div class="r">没有会话</div>'}`);
           });
           rect.addEventListener('mouseleave', tip.hide);
@@ -70,7 +71,7 @@
       el('text', { x: window.AMI18n?.lang === 'en' ? lx - 14 : lx, y: ly + 9 }, svg).textContent = SEARCH ? '1' : '少';
       ramp.forEach((c, i) => el('rect', { x: lx + 16 + i * 14, y: ly, width: 11, height: 11, rx: 2, fill: c }, svg));
       el('text', { x: lx + 20 + ramp.length * 14, y: ly + 9 }, svg).textContent = SEARCH ? `${ramp.length}+ 个会话` : '多';
-      box._mark = (d) => cells.forEach((c) => { const on = c.getAttribute('data-d') === d; c.setAttribute('stroke', on ? '#e8ecf6' : 'none'); c.setAttribute('stroke-width', on ? 2 : 0); });
+      box._mark = (d) => cells.forEach((c) => { const on = c.getAttribute('data-d') === d; c.setAttribute('stroke', on ? Console.css('--text-primary') : 'none'); c.setAttribute('stroke-width', on ? 2 : 0); });
       if (currentDay) box._mark(currentDay);
     }
 
@@ -143,18 +144,18 @@
       const fm = el('feMerge', {}, f); el('feMergeNode', { in: 'b' }, fm); el('feMergeNode', { in: 'SourceGraphic' }, fm);
       const X = (min) => left + (W - left - right) * (min / 1440);
       for (let h = 0; h <= 24; h += 3) {
-        el('line', { x1: X(h * 60), x2: X(h * 60), y1: top - 6, y2: top + (lanesKey.length ? acc : 0), stroke: 'rgba(148,163,184,.12)' }, svg);
+        el('line', { x1: X(h * 60), x2: X(h * 60), y1: top - 6, y2: top + (lanesKey.length ? acc : 0), stroke: Console.rgba('--slate-rgb', 0.12) }, svg);
         el('text', { x: X(h * 60), y: 14, 'text-anchor': 'middle' }, svg).textContent = `${String(h).padStart(2, '0')}:00`;
       }
       // 现在几点（看今天时）
       if (currentDay === todayStr()) {
         const nx = X(minutesOf(new Date().toISOString()));
-        el('line', { x1: nx, x2: nx, y1: top - 8, y2: top + (lanesKey.length ? acc : 0), stroke: '#e66767', 'stroke-dasharray': '3 3' }, svg);
+        el('line', { x1: nx, x2: nx, y1: top - 8, y2: top + (lanesKey.length ? acc : 0), stroke: Console.rgba('--rose-rgb', 1), 'stroke-dasharray': '3 3' }, svg);
       }
       lanesKey.forEach((k, i) => {
         const [d, t] = k.split('|');
         const y = top + laneTop[k]; const h = laneRows[k] * rowH + (laneRows[k] - 1) * 3 + lanePad * 2;
-        if (i % 2 === 0) el('rect', { x: left, y, width: W - left - right, height: h, fill: 'rgba(255,255,255,0.018)' }, svg);
+        if (i % 2 === 0) el('rect', { x: left, y, width: W - left - right, height: h, fill: Console.rgba('--wash-rgb', 0.018) }, svg);
         el('text', { x: 0, y: y + h / 2 + 4, style: 'fill:var(--text-primary);font-size:12px' }, svg).textContent = `${dev(d)} · ${tool(t)}`;
       });
       const cardOf = new Map();
@@ -213,11 +214,11 @@
       arr.forEach((n, i) => {
         const r = Math.floor(i / 24); const h = i % 24;
         const cx = left + h * cw + cw / 2; const cy = top + r * ch + ch / 2;
-        el('rect', { x: cx - cw / 2 + 1, y: cy - ch / 2 + 1, width: cw - 2, height: ch - 2, rx: 3, fill: h < 5 ? 'rgba(144,133,233,0.06)' : 'rgba(255,255,255,0.02)' }, svg);
+        el('rect', { x: cx - cw / 2 + 1, y: cy - ch / 2 + 1, width: cw - 2, height: ch - 2, rx: 3, fill: h < 5 ? Console.rgba('--violet-rgb', 0.06) : Console.rgba('--wash-rgb', 0.02) }, svg);
         if (!n) return;
         const rad = Math.max(1.5, (Math.min(cw, ch) / 2 - 1.5) * Math.sqrt(n / max));
         const k = n / max;
-        const c = el('circle', { cx, cy, r: 0, fill: k > 0.66 ? '#9ec5f4' : k > 0.33 ? '#3987e5' : '#256abf', style: `transition:r .7s cubic-bezier(.2,.8,.2,1) ${(h * 12 + r * 30)}ms;${k > 0.66 ? 'filter:drop-shadow(0 0 5px rgba(134,182,239,.8))' : ''}` }, svg);
+        const c = el('circle', { cx, cy, r: 0, fill: k > 0.66 ? SEQ[5] : k > 0.33 ? SEQ[3] : SEQ[2], style: `transition:r .7s cubic-bezier(.2,.8,.2,1) ${(h * 12 + r * 30)}ms;${k > 0.66 ? `filter:drop-shadow(0 0 5px ${Console.rgba('--glow-sky-rgb', 0.8)})` : ''}` }, svg);
         requestAnimationFrame(() => c.setAttribute('r', rad));
         const hit = el('rect', { x: cx - cw / 2, y: cy - ch / 2, width: cw, height: ch, fill: 'transparent' }, svg);
         hit.addEventListener('mousemove', (e) => tip.show(e, `<div class="h">周${days[r]} ${String(h).padStart(2, '0')}:00–${String(h + 1).padStart(2, '0')}:00</div><div class="r">你发的消息<em>${n.toLocaleString()}</em></div><div class="r">占这个范围的<em>${((100 * n) / total).toFixed(1)}%</em></div>`));
@@ -356,6 +357,7 @@
       },
       hide() { showSeq++; if (playing) stopReplay(false); tip.hide(); },
       resize() { if (!DATA) return; drawnKey = null; draw(); if (currentDay) loadDay(currentDay); },
+      theme() { loadHot(); if (!DATA) return; drawnKey = null; draw(); if (currentDay) loadDay(currentDay); },
     });
   })();
 
@@ -388,7 +390,7 @@
       const Y = (v) => H - bottom - (H - top - bottom) * (v / max);
       for (let g = 0; g <= 4; g++) {
         const v = Math.round((max * g) / 4); const y = Y(v);
-        el('line', { x1: left, x2: W - right, y1: y, y2: y, stroke: 'rgba(148,163,184,.10)' }, svg);
+        el('line', { x1: left, x2: W - right, y1: y, y2: y, stroke: Console.rgba('--slate-rgb', 0.1) }, svg);
         el('text', { x: left - 6, y: y + 4, 'text-anchor': 'end' }, svg).textContent = v;
       }
       let lastM = '';
@@ -396,7 +398,7 @@
       const defs = el('defs', {}, svg);
       const base = ws.map(() => 0);
       series.forEach((s, si) => {
-        const color = s === '其他' ? OTHER : colorOf(s);
+        const color = s === '其他' ? Console.OTHER : colorOf(s);
         const gid = `rg${si}`;
         const lg = el('linearGradient', { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 }, defs);
         el('stop', { offset: '0%', 'stop-color': color, 'stop-opacity': 0.95 }, lg);
@@ -411,9 +413,9 @@
         setTimeout(() => path.setAttribute('opacity', 1), 80 * si);
         for (let i = 0; i < ws.length; i++) base[i] = hi[i];
       });
-      $('riverLegend').innerHTML = series.map((s) => `<span><b style="background:${s === '其他' ? OTHER : colorOf(s)}"></b>${esc(s)}</span>`).join('');
+      $('riverLegend').innerHTML = series.map((s) => `<span><b style="background:${s === '其他' ? Console.OTHER : colorOf(s)}"></b>${esc(s)}</span>`).join('');
       // 十字线 + 提示
-      const cross = el('line', { y1: top, y2: H - bottom, stroke: 'rgba(232,236,246,.5)', 'stroke-dasharray': '3 3', opacity: 0 }, svg);
+      const cross = el('line', { y1: top, y2: H - bottom, stroke: Console.rgba('--text-rgb', 0.5), 'stroke-dasharray': '3 3', opacity: 0 }, svg);
       const hit = el('rect', { x: left, y: top, width: W - left - right, height: H - top - bottom, fill: 'transparent' }, svg);
       hit.addEventListener('mousemove', (e) => {
         const r = svg.getBoundingClientRect();
@@ -421,7 +423,7 @@
         cross.setAttribute('x1', X(i)); cross.setAttribute('x2', X(i)); cross.setAttribute('opacity', 1);
         const acc = weeks.get(ws[i]);
         const rows = series.filter((s) => acc[s]).sort((a, b) => acc[b] - acc[a]);
-        tip.show(e, `<div class="h">${ws[i]} 这周 · ${tot[i]} 段</div>${rows.map((s) => `<div class="r"><b style="background:${s === '其他' ? OTHER : colorOf(s)}"></b>${esc(s)}<em>${acc[s]}</em></div>`).join('')}`);
+        tip.show(e, `<div class="h">${ws[i]} 这周 · ${tot[i]} 段</div>${rows.map((s) => `<div class="r"><b style="background:${s === '其他' ? Console.OTHER : colorOf(s)}"></b>${esc(s)}<em>${acc[s]}</em></div>`).join('')}`);
       });
       hit.addEventListener('mouseleave', () => { tip.hide(); cross.setAttribute('opacity', 0); });
     }
@@ -456,7 +458,7 @@
       });
       const svg = el('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}` }, box);
       const defs = el('defs', {}, svg);
-      const nodeColor = (ci, name) => (ci === 0 ? '#6da7ec' : ci === 1 ? '#9085e9' : (name === '其他' ? OTHER : colorOf(name)));
+      const nodeColor = (ci, name) => (ci === 0 ? Console.css('--kind-machine') : ci === 1 ? Console.css('--brand-b') : (name === '其他' ? Console.OTHER : colorOf(name)));
       let gi = 0;
       const drawLinks = (m, from, to) => {
         const entries = [...m.entries()].map(([kk, v]) => { const [a, b] = kk.split('|'); return { a, b, v }; })
@@ -481,7 +483,7 @@
       drawLinks(L2, 1, 2);
       pos.forEach((m, ci) => {
         for (const [name, n] of m) {
-          el('rect', { x: xs[ci], y: n.y, width: nodeW, height: n.h, rx: 3, fill: nodeColor(ci, name), style: 'filter:drop-shadow(0 0 6px rgba(134,182,239,.45))' }, svg);
+          el('rect', { x: xs[ci], y: n.y, width: nodeW, height: n.h, rx: 3, fill: nodeColor(ci, name), style: `filter:drop-shadow(0 0 6px ${Console.rgba('--glow-sky-rgb', 0.45)})` }, svg);
           const lab = ci === 0 ? dev(name) : ci === 1 ? tool(name) : name;
           const t = el('text', { x: ci === 2 ? xs[ci] + nodeW + 8 : xs[ci] - 8, y: n.y + n.h / 2 + 4, 'text-anchor': ci === 2 ? 'start' : 'end', style: 'fill:var(--text-primary);font-size:12px' }, svg);
           t.textContent = `${lab}  `;
@@ -601,6 +603,7 @@
         Console.every('todos', 120000, loadTodos);
       },
       show() { loadTodos(); },
+      theme() { loadTodos(); },
     });
   })();
 })();

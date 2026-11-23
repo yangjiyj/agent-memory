@@ -18,8 +18,15 @@
   const FRESH = 15 * 60e3; // 这个时间内同步过：连线流动
   const ACTIVE = 60 * 60e3; // 抽取机、报表这个时间内有活动：连线流动
   const MIN_W = 980; // 比这窄就横向滚动
-  const RGB = { dev: '57,135,229', grp: '57,135,229', gate: '36,196,138', hub: '144,133,233', repo: '232,170,60', arc: '232,170,60', ext: '221,96,140', vec: '80,200,230', rep: '134,182,239', web: '205,226,251', up: '84,214,240', dn: '255,184,76' };
-  const EV_RGB = { read: RGB.dn, write: RGB.up, talk: '124,150,255', extract: RGB.ext, report: RGB.gate, console: RGB.web };
+  // 节点/连线/事件的颜色取自令牌（--k-*、--tp-up、--tp-dn、--dot-*）；换主题时 loadColors() 原地更新这几个对象
+  const RGB = {}; const EV_RGB = {}; const ST_COLOR = {};
+  const loadColors = () => {
+    const k = (n) => Console.css(`--k-${n}`);
+    Object.assign(RGB, { dev: k('dev'), grp: k('dev'), gate: k('gate'), hub: k('hub'), repo: k('repo'), arc: k('repo'), ext: k('ext'), vec: k('vec'), rep: k('rep'), web: k('web'), up: Console.css('--tp-up'), dn: Console.css('--tp-dn') });
+    Object.assign(EV_RGB, { read: RGB.dn, write: RGB.up, talk: k('talk'), extract: RGB.ext, report: RGB.gate, console: RGB.web });
+    Object.assign(ST_COLOR, { live: Console.css('--dot-ok'), ok: Console.css('--dot-ok'), idle: Console.css('--dot-idle'), stale: Console.css('--dot-bad'), paused: Console.css('--dot-off') });
+  };
+  loadColors();
   const GROUP = { gateway: 0, join: 1, token: 2 };
   const IDENT = { gateway: '网关', join: '加入码', token: '令牌' };
   const VIA = { gateway: '网关', config: '控制台配置' };
@@ -29,7 +36,6 @@
   const NOAGENT = ['unknown', 'cli', 'browser', 'console'];
   const RM = window.matchMedia('(prefers-reduced-motion: reduce)');
   const SEG_TOP = 22; const SEG_BOT = 6; const SEG = SEG_TOP + SEG_BOT; // 展开的组：底板顶上一条标签、底下留边
-  const ST_COLOR = { live: '#35d36b', ok: '#35d36b', idle: '#3f9a5f', stale: '#ef5b5b', paused: '#4a5470' };
   const CHEV = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
   // 时间回放（console-replay.js）通过这几个钩子介入渲染，默认都不起作用：
   //   now：回放中 = 那一刻的毫秒时间戳，所有"几分钟前"都按它算；null = 实时
@@ -909,5 +915,6 @@
     async show() { root.classList.remove('tp-paused'); await load(); return pollEvents(); },
     hide() { root.classList.add('tp-paused'); HK.hidden?.(); closeDrawer(); tip.hide(); if (fsOn()) { box.classList.remove('tp-fs'); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); } },
     resize() { if (D) render(); },
+    theme() { loadColors(); sig = ''; feedSig = ''; if (pjBox) pjBox.dataset.h = ''; if (D) render(); }, // 连线渐变、节点 --cr 都是建画布时写进去的，重建一遍
   });
 })();

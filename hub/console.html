@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>(function(){var p="";try{p=localStorage.getItem("am.theme")||""}catch(e){}var d=window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.dataset.theme=/[?&]embed(=|&|$)/.test(location.search)||p==="dark"||(p!=="light"&&d)?"dark":"light"})()</script>
 <title>agent-memory</title>
 <script>window.__amBoot = fetch('/console/api/boot?page=' + encodeURIComponent(location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] || 'overview')).then((r) => (r.ok ? r.json() : null)).catch(() => null);</script>
 <link rel="stylesheet" href="/console/console.css">
@@ -36,6 +37,7 @@
 <script src="/console/console-i18n-ui.js"></script>
 <script src="/console/console-i18n-srv.js"></script>
 <script src="/console/console-core.js"></script>
+<script src="/console/console-theme.js"></script>
 <script src="/console/console-overview.js"></script>
 <script src="/console/console-work.js"></script>
 <script src="/console/console-graph.js"></script>

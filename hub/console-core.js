@@ -9,6 +9,7 @@
  *     show(params) { … },            // 可选。每次进入页面、以及页面内路由参数变化（如 #/lib/<id>）时调用；mount 之后紧接着也会调一次
  *     hide() { … },                  // 可选。离开页面时调用，停掉动画循环
  *     resize() { … },                // 可选。窗口尺寸变化（防抖后）时只对当前可见页调用，按 clientWidth 画图的页面在这里重画
+ *     theme() { … },                 // 可选。换了浅色/深色主题时调用（颜色是画图时读的，要重画）；不写就调 resize()
  *   });
  *   · 页面 id 固定为侧栏里那 15 个：overview lib triage graph timeline projects todos convs topology devices agents mcp audit jobs settings
  *   · 页面隐藏时 clientWidth 为 0：所有按容器宽度画图的代码都要放在 show/resize 里画，不要在脚本加载时画。
@@ -36,7 +37,9 @@
  *   Console.tool(id)                   智能体显示名（claude-code → Claude Code）
  *   Console.toolOrder                  智能体的常规排序
  *   Console.color(project)             项目颜色（按累计排名固定分配）；Console.top() 是排名前 7 的项目名
- *   Console.SLOTS / SEQ / OTHER / UNWRITTEN   调色板常量
+ *   Console.SLOTS / SEQ / OTHER / UNWRITTEN   调色板（取自令牌，随主题变；SLOTS/SEQ 原地更新，OTHER/UNWRITTEN 是 getter，别在脚本顶层把它们存进变量）
+ *   Console.css('--令牌') / Console.rgba('--xxx-rgb', 透明度)   读 CSS 令牌（有缓存，主题变了自动清）；画布和 SVG 的颜色一律这样取，不要写死
+ *   Console.theme                      { get(), set('auto'|'light'|'dark'), resolved() }（console-theme.js）；换主题时 window 发 am-theme 事件，当前页被调用 theme()（没有就调 resize()），别的页下次进来补一次
  *   Console.zh                         { type, origin, state }：记忆类型、来源方式、状态的中文名
  *   Console.date                       { WEEK, today(), localDay(ms), addDays(d,n), wd(d), weekStart(d), minutesOf(iso), hm(iso), ago(iso) }（均按东八区）
  *   Console.tip                        { show(event, html), move(event), hide() } 悬停浮层；html 里可用 .h 标题行、.r 行（里面放 <b> 色块 和 <em> 数值）
@@ -99,13 +102,24 @@
     state: { active: '有效', proposed: '待审候选', superseded: '已被取代', retired: '已作废' },
   };
 
-  Console.SLOTS = ['--s1', '--s2', '--s3', '--s4', '--s5', '--s6', '--s7'].map((v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
-  Console.OTHER = '#5b6478';
-  Console.UNWRITTEN = '#39425a';
-  Console.SEQ = ['#104281', '#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'];
-  let TOP = []; let COLOR = {};
+  // 颜色一律取自 console.css 的令牌（深色/浅色各一套），读过的缓存起来，主题变了（am-theme）清掉重读
+  const tokens = new Map();
+  Console.css = (name) => { let v = tokens.get(name); if (v === undefined) { v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); tokens.set(name, v); } return v; };
+  Console.rgba = (name, a) => `rgba(${Console.css(name)}, ${a})`; // name 是 `--xxx-rgb` 这类 "r, g, b" 三元组令牌
+  // 调色板：SLOTS / SEQ 原地更新（别处解构出去的引用跟着变）；OTHER / UNWRITTEN 是字符串，用 getter
+  Console.SLOTS = []; Console.SEQ = [];
+  let OTHER_C = ''; let UNWRITTEN_C = '';
+  Object.defineProperty(Console, 'OTHER', { get: () => OTHER_C });
+  Object.defineProperty(Console, 'UNWRITTEN', { get: () => UNWRITTEN_C });
+  Console.refreshPalette = () => {
+    tokens.clear();
+    for (let i = 0; i < 7; i++) { Console.SLOTS[i] = Console.css(`--s${i + 1}`); Console.SEQ[i] = Console.css(`--seq${i + 1}`); }
+    OTHER_C = Console.css('--other'); UNWRITTEN_C = Console.css('--unwritten');
+  };
+  Console.refreshPalette();
+  let TOP = [];
   Console.top = () => TOP;
-  Console.color = (p) => COLOR[p] || (p === '未写日志' || !p ? Console.UNWRITTEN : Console.OTHER);
+  Console.color = (p) => { const i = TOP.indexOf(p); return i >= 0 ? Console.SLOTS[i] : (p === '未写日志' || !p ? UNWRITTEN_C : OTHER_C); };
 
   const NS = 'http://www.w3.org/2000/svg';
   Console.svg = (tag, attrs = {}, parent) => {
@@ -226,7 +240,6 @@
       DATA = d; dataAt = Date.now();
       DEVICE = d.device_labels || {};
       TOP = d.projects.filter((x) => x.p !== '未写日志' && x.p !== '其他').slice(0, 7).map((x) => x.p);
-      COLOR = {}; TOP.forEach((p, i) => { COLOR[p] = Console.SLOTS[i]; });
       return d;
     }).finally(() => { dataP = null; });
     return dataP;
@@ -306,12 +319,19 @@
       if (token !== navToken) return;
       await def.show?.(params);
       if (token === navToken && first) startTick(id);
+      if (token === navToken && (themed.get(id) || 0) !== themeEpoch) redraw(id);
     } catch (e) {
       console.error(e);
       Console.toast(`页面出错：${e.message}`, 'err');
     }
   }
   Console.visible = (id) => cur === id;
+
+  // 主题切换（console-theme.js 发 am-theme）：重读调色板，当前页立刻重画；别的页等下次进来、show 跑完后补一次。
+  // 页面定义了 theme() 就调它，没有就调 resize()（按容器画图的页面本来就整页重画）
+  let themeEpoch = 0; const themed = new Map();
+  const redraw = (id) => { themed.set(id, themeEpoch); const d = defs.get(id); try { (d?.theme || d?.resize)?.call(d, curParams); } catch (e) { console.warn(e); } };
+  addEventListener('am-theme', () => { themeEpoch++; Console.refreshPalette(); if (cur && mounted.has(cur)) redraw(cur); });
 
   // ---------------- 外壳 ----------------
   function buildShell() {
@@ -333,7 +353,7 @@
   // 背景：缓慢漂移的星点和连线（纯装饰，标签页不可见时暂停）
   function stars() {
     const c = document.getElementById('stars'); const g = c.getContext('2d');
-    let w = 0; let h = 0; let pts = []; const dpr = devicePixelRatio || 1;
+    let w = 0; let h = 0; let pts = []; let lit = true; const dpr = devicePixelRatio || 1;
     const reset = () => {
       w = c.width = innerWidth * dpr; h = c.height = innerHeight * dpr;
       c.style.width = `${innerWidth}px`; c.style.height = `${innerHeight}px`;
@@ -345,15 +365,19 @@
     const frame = () => {
       requestAnimationFrame(frame);
       if (document.hidden) return;
+      if (Console.theme?.resolved() === 'light') { if (lit) { g.clearRect(0, 0, w, h); lit = false; } return; } // 浅色下星空不画（画布也被样式隐藏了）
+      lit = true;
       g.clearRect(0, 0, w, h);
       for (const p of pts) { p.x = (p.x + p.vx + w) % w; p.y = (p.y + p.vy + h) % h; }
+      const sky = Console.css('--sky-rgb');
       for (let i = 0; i < pts.length; i++) {
         for (let j = i + 1; j < pts.length; j++) {
           const dx = pts[i].x - pts[j].x; const dy = pts[i].y - pts[j].y; const d = Math.hypot(dx, dy);
-          if (d < link) { g.strokeStyle = `rgba(134,182,239,${0.16 * (1 - d / link)})`; g.lineWidth = dpr * 0.6; g.beginPath(); g.moveTo(pts[i].x, pts[i].y); g.lineTo(pts[j].x, pts[j].y); g.stroke(); }
+          if (d < link) { g.strokeStyle = `rgba(${sky},${0.16 * (1 - d / link)})`; g.lineWidth = dpr * 0.6; g.beginPath(); g.moveTo(pts[i].x, pts[i].y); g.lineTo(pts[j].x, pts[j].y); g.stroke(); }
         }
       }
-      for (const p of pts) { g.fillStyle = 'rgba(205,226,251,.75)'; g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = Console.rgba('--star-rgb', 0.75);
+      for (const p of pts) { g.beginPath(); g.arc(p.x, p.y, p.r, 0, Math.PI * 2); g.fill(); }
     };
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame);
   }

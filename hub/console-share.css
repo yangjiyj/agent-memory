@@ -4,8 +4,8 @@
 .sh-proj { color: var(--accent); }
 .sh-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .sh-row button { font: inherit; font-size: 13px; color: var(--text-secondary); background: transparent; border: 1px solid var(--panel-line); border-radius: 8px; padding: 4px 16px; cursor: pointer; transition: .15s; }
-.sh-row button:hover { color: var(--text-primary); border-color: rgba(134, 182, 239, .4); }
-.sh-row button.on { color: var(--text-primary); background: rgba(57, 135, 229, .18); border-color: rgba(134, 182, 239, .5); }
+.sh-row button:hover { color: var(--text-primary); border-color: rgba(var(--sky-rgb), .4); }
+.sh-row button.on { color: var(--text-primary); background: rgba(var(--blue-rgb), .18); border-color: rgba(var(--sky-rgb), .5); }
 .sh-act { margin: 14px 0; }
 .sh-out { display: flex; gap: 6px; margin-bottom: 4px; }
 .sh-out[hidden], .sh-note[hidden] { display: none; }

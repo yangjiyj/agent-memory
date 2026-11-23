@@ -212,7 +212,7 @@
       const t = u + d;
       if (!t) return '<i></i>';
       const wp = Math.round((u / t) * 100);
-      return `<i style="height:${Math.max(12, Math.round((t / mx) * 100))}%;background:linear-gradient(to top,rgb(84,214,240) ${wp}%,rgb(255,184,76) ${wp}%)"></i>`;
+      return `<i style="height:${Math.max(12, Math.round((t / mx) * 100))}%;background:linear-gradient(to top,rgb(var(--tp-up)) ${wp}%,rgb(var(--tp-dn)) ${wp}%)"></i>`;
     }).join('');
     drawTicks(tAt(0), tAt(V));
   }
