@@ -38,18 +38,22 @@ export function createExtras(ctx) {
   const active = () => [...store.values()].filter((e) => e.meta.state === 'active');
   const refMap = () => new Map(Object.keys(conv.index()).map((k) => [conv.refOf(k), k]));
   const sameProj = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+  // 浏览者可见范围（scope 由 server.mjs 的 scopeOf 给；会话怎么归项目见 convlog.mjs 的 hiddenKeys）：没有 scope 或没开就什么都不过滤
+  const entryOk = (scope, e) => !scope?.on || scope.project(e.meta.project);
+  const activeOf = (scope) => active().filter((e) => entryOk(scope, e));
+  const segOk = (scope, key, s) => !scope?.on || (conv.keyOk(scope, key) && scope.project(s.project));
 
   // ---------------------------------------------------------------- 项目列表
-  function projects() {
+  function projects(scope) {
     const m = {};
-    for (const e of active()) if (e.meta.project) m[e.meta.project] = (m[e.meta.project] || 0) + 1;
-    for (const [, o] of conv.journal()) for (const s of Object.values(o)) if (s.project) m[s.project] = (m[s.project] || 0) + 1;
+    for (const e of activeOf(scope)) if (e.meta.project) m[e.meta.project] = (m[e.meta.project] || 0) + 1;
+    for (const [, o] of conv.journal()) for (const [key, s] of Object.entries(o)) if (s.project && segOk(scope, key, s)) m[s.project] = (m[s.project] || 0) + 1;
     return Object.entries(m).sort((a, b) => b[1] - a[1]).map(([p, n]) => ({ p, n }));
   }
 
   // ---------------------------------------------------------------- 待办雷达
   function loadRadar() { return readJSON(radarFile, {}); }
-  function todos({ project = '', days = 21 } = {}) {
+  function todos({ project = '', days = 21 } = {}, scope) {
     const marks = loadRadar();
     const idx = conv.index();
     const bySession = new Map();
@@ -57,6 +61,7 @@ export function createExtras(ctx) {
     for (const [d, o] of conv.journal()) {
       if (d < since) continue;
       for (const [key, s] of Object.entries(o)) {
+        if (!segOk(scope, key, s)) continue;
         const cur = bySession.get(key);
         if (!cur || d > cur.date) bySession.set(key, { ...s, date: d, key });
       }
@@ -74,17 +79,17 @@ export function createExtras(ctx) {
     items.sort((a, b) => (a.status === 'blocked' ? 0 : 1) - (b.status === 'blocked' ? 0 : 1) || b.date.localeCompare(a.date));
     // 停了的项目：30 天内有过会话、最近 7 天一段都没有
     const last = {};
-    for (const [d, o] of conv.journal()) for (const s of Object.values(o)) if (s.project && (!last[s.project] || d > last[s.project])) last[s.project] = d;
+    for (const [d, o] of conv.journal()) for (const [key, s] of Object.entries(o)) if (s.project && segOk(scope, key, s) && (!last[s.project] || d > last[s.project])) last[s.project] = d;
     const d7 = localDay(new Date(Date.now() - 7 * 86400e3).toISOString());
     const d30 = localDay(new Date(Date.now() - 30 * 86400e3).toISOString());
     const cnt = {};
-    for (const [d, o] of conv.journal()) if (d >= d30) for (const s of Object.values(o)) if (s.project) cnt[s.project] = (cnt[s.project] || 0) + 1;
+    for (const [d, o] of conv.journal()) if (d >= d30) for (const [key, s] of Object.entries(o)) if (s.project && segOk(scope, key, s)) cnt[s.project] = (cnt[s.project] || 0) + 1;
     const stalled = Object.entries(last).filter(([p, d]) => d < d7 && d >= d30 && (cnt[p] || 0) >= 5).sort((a, b) => b[1].localeCompare(a[1])).map(([p, d]) => ({ project: p, last: d }));
     return { items, stalled };
   }
-  async function markTodo(ref, action, who) {
+  async function markTodo(ref, action, who, scope) {
     const key = refMap().get(String(ref || ''));
-    if (!key) throw new UserError('没有这个会话');
+    if (!key || !conv.keyOk(scope, key)) throw new UserError('没有这个会话');
     if (!['done', 'ignore', 'reopen'].includes(action)) throw new UserError('action 只能是 done / ignore / reopen');
     return serial(async () => {
       const marks = loadRadar();
@@ -110,26 +115,28 @@ export function createExtras(ctx) {
   }
 
   // ---------------------------------------------------------------- 交接包
-  function handoff({ project = '', days = 14, query = '' } = {}) {
+  function handoff({ project = '', days = 14, query = '' } = {}, scope) {
     const p = String(project || '').trim();
     const words = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
     if (!p && !words.length) throw new UserError('给个项目名（如 myapp）或关键词');
+    if (scope?.on && p && !scope.project(p)) throw new UserError('没有这个项目');
     const n = Math.min(Math.max(parseInt(days, 10) || 14, 1), 180);
     const since = localDay(new Date(Date.now() - n * 86400e3).toISOString());
     const hit = (txt) => words.every((w) => String(txt || '').toLowerCase().includes(w));
-    const mem = active().filter((e) => (p ? sameProj(e.meta.project, p) : true) && (!words.length || hit(`${e.meta.title}\n${e.body}\n${e.meta.subject || ''}`))).sort(byUpdated);
+    const mem = activeOf(scope).filter((e) => (p ? sameProj(e.meta.project, p) : true) && (!words.length || hit(`${e.meta.title}\n${e.body}\n${e.meta.subject || ''}`))).sort(byUpdated);
     const of = (t) => mem.filter((e) => e.meta.type === t);
     const segs = [];
     for (const [d, o] of conv.journal()) {
       if (d < since) continue;
       for (const [key, s] of Object.entries(o)) {
+        if (!segOk(scope, key, s)) continue;
         if (p && !sameProj(s.project, p)) continue;
         if (words.length && !hit(`${s.summary} ${(s.points || []).join(' ')} ${s.title || ''}`)) continue;
         segs.push({ ...s, date: d, key, ref: conv.refOf(key) });
       }
     }
     segs.sort((a, b) => b.date.localeCompare(a.date) || String(b.first).localeCompare(String(a.first)));
-    const open = todos({ project: p, days: Math.max(n, 30) }).items.filter((t) => !words.length || hit(`${t.summary} ${t.title}`));
+    const open = todos({ project: p, days: Math.max(n, 30) }, scope).items.filter((t) => !words.length || hit(`${t.summary} ${t.title}`));
     const sessions = new Map();
     for (const s of segs) {
       const cur = sessions.get(s.key) || { ref: s.ref, title: conv.index()[s.key]?.title || s.title, first: s.date, last: s.date, device: s.device, tool: s.tool, n: 0 };
@@ -169,7 +176,7 @@ export function createExtras(ctx) {
     }
     const refs = [...of('reference'), ...of('fact')];
     if (refs.length) { out.push('## 参考与事实', '', ...refs.slice(0, 15).map((e) => `- ${e.meta.title}${e.meta.type === 'reference' ? `：${short(e.body, 160)}` : ''}`), ''); }
-    const prefs = active().filter((e) => e.meta.type === 'preference' || e.meta.type === 'feedback').sort(byUpdated).slice(0, 12);
+    const prefs = activeOf(scope).filter((e) => e.meta.type === 'preference' || e.meta.type === 'feedback').sort(byUpdated).slice(0, 12);
     if (prefs.length) { out.push('## 用户的偏好（照做）', '', ...prefs.map((e) => `- ${e.meta.title}`), ''); }
     if (out.length < 8) out.push('（这段时间里没有找到相关的记忆和日志。换个项目名、关键词或拉长天数试试。）');
     return out.join('\n');
@@ -203,12 +210,13 @@ export function createExtras(ctx) {
   }
 
   // ---------------------------------------------------------------- 记忆管理
-  let dupCache = null;
+  const dupCaches = new Map();
   // 待整理的三份名单（疑似重复、过期现状、待审候选）；manageData 和 manageCounts 共用这一段，口径只有一处
-  function manageState() {
-    const all = [...store.values()].filter((e) => e.meta.state === 'active' || e.meta.state === 'proposed');
+  function manageState(scope) {
+    const all = [...store.values()].filter((e) => (e.meta.state === 'active' || e.meta.state === 'proposed') && entryOk(scope, e));
     const sig = crypto.createHash('sha1').update(all.map((e) => `${e.meta.id}:${e.meta.type}:${e.meta.updated}:${e.meta.state}:${e.meta.title}`).join('|')).digest('hex');
-    if (!dupCache || dupCache.sig !== sig) {
+    let dupCache = dupCaches.get(sig);
+    if (!dupCache) {
       const g = all.map((e) => ({ e, g: grams(e.meta.title) }));
       const groups = [];
       const used = new Set();
@@ -223,6 +231,8 @@ export function createExtras(ctx) {
         if (grp.length > 1) { grp.forEach((k) => used.add(k)); groups.push(grp.map((k) => g[k].e.meta.id)); }
       }
       dupCache = { sig, groups };
+      dupCaches.set(sig, dupCache);
+      if (dupCaches.size > 4) dupCaches.delete(dupCaches.keys().next().value);
     }
     return {
       all,
@@ -232,19 +242,20 @@ export function createExtras(ctx) {
     };
   }
   // 只要数字：概览页和侧栏徽标用，不带条目正文。重复分组有按内容签名的缓存，没有改动时只是过一遍名单
-  function manageCounts() {
-    const m = manageState();
+  function manageCounts(scope) {
+    const m = manageState(scope);
     return { proposed: m.proposed.length, duplicates: m.duplicates.length, stale: m.stale.length, total: m.proposed.length + m.duplicates.length + m.stale.length };
   }
-  function manageData() {
-    const { all, duplicates, stale, proposed } = manageState();
+  function manageData(scope) {
+    const { all, duplicates, stale, proposed } = manageState(scope);
     const row = (e) => ({ id: e.meta.id, type: e.meta.type, state: e.meta.state, title: e.meta.title, project: e.meta.project || '', subject: e.meta.subject || '',
       origin: e.meta.origin, source: `${e.meta.author}/${e.meta.client}`, updated: e.meta.updated, created: e.meta.created, body: short(e.body, 600), tags: e.meta.tags || [] });
     return { entries: all.sort(byUpdated).map(row), duplicates, stale, proposed };
   }
-  async function manageAction(b, viewer, api) {
+  async function manageAction(b, viewer, api, scope) {
     const who = { device: viewer, client: 'browser' };
-    const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).filter(Boolean).map(String);
+    // 看不到的条目当作不存在，不让浏览者改、作废、合并或审批它
+    const ids = (Array.isArray(b.ids) ? b.ids : [b.id]).filter(Boolean).map(String).filter((id) => !scope?.on || (store.get(id) && entryOk(scope, store.get(id))));
     const reason = String(b.reason || '').slice(0, 200);
     switch (b.action) {
       case 'edit': return api.updateEntry({ id: ids[0], title: b.title, body: b.body, project: b.project, subject: b.subject }, who).then((e) => ({ ok: true, id: e.meta.id }));
@@ -276,7 +287,7 @@ export function createExtras(ctx) {
   }
 
   // ---------------------------------------------------------------- 审计
-  function audit({ days = 7 } = {}) {
+  function audit({ days = 7 } = {}, scope) {
     const since = Date.now() - Math.min(Math.max(parseInt(days, 10) || 7, 1), 90) * 86400e3;
     const ev = readJsonl(usageFile(), since).filter((u) => u.op.startsWith('tool:') || u.op.startsWith('cli:') || u.op.startsWith('console:') || u.op.startsWith('manage:') || ['browse', 'viz', 'wrapped', 'console', 'wall'].includes(u.op));
     const by = {};
@@ -290,7 +301,13 @@ export function createExtras(ctx) {
       ops[op] = (ops[op] || 0) + 1;
     }
     const rej = readJsonl(path.join(CFG.state, 'rejections.jsonl'), since);
-    return { since: new Date(since).toISOString(), total: ev.length, byClient: Object.entries(by).sort((a, b) => b[1].calls - a[1].calls), ops: Object.entries(ops).sort((a, b) => b[1] - a[1]), events: ev.slice(-300).reverse(), rejections: rej.slice(-30).reverse() };
+    // 调用记录里的细节（查询词、标题、条目 id、项目名）和拒收位置（带标题）没法归到项目：限制可见范围的浏览者只看到谁在什么时候调了什么
+    const strip = (u) => { const { d, ...rest } = u; return rest; };
+    const mask = (r) => ({ ...r, where: String(r.where || '').split(':')[0] });
+    return {
+      since: new Date(since).toISOString(), total: ev.length, byClient: Object.entries(by).sort((a, b) => b[1].calls - a[1].calls), ops: Object.entries(ops).sort((a, b) => b[1] - a[1]),
+      events: ev.slice(-300).reverse().map((u) => (scope?.on ? strip(u) : u)), rejections: rej.slice(-30).reverse().map((r) => (scope?.on ? mask(r) : r)),
+    };
   }
 
   // ---------------------------------------------------------------- 知识图谱
@@ -299,12 +316,13 @@ export function createExtras(ctx) {
     machine: [], // 在 config.json 的 graph_entities.machine 里配你的机器名
     site: [],
   };
-  let graphCache = null;
-  function graph() {
+  const graphCache = new Map(); // hideKey（不过滤是空串）-> { sig, data }
+  function graph(scope) {
+    const hk = scope?.on ? scope.hideKey : '';
     const sig = `${JSON.stringify(CFG.graph_entities || 0)}:${store.size}:${[...store.values()].reduce((a, e) => a + (Date.parse(e.meta.updated) || 0), 0)}:${conv.journal().size}`;
-    if (graphCache?.sig === sig) return graphCache.data;
+    if (graphCache.get(hk)?.sig === sig) return graphCache.get(hk).data;
     const ents = CFG.graph_entities || DEFAULT_ENTITIES;
-    const projs = projects().filter((x) => x.n >= 3).map((x) => x.p);
+    const projs = projects(scope).filter((x) => x.n >= 3).map((x) => x.p);
     const dict = [
       ...projs.map((p) => ({ kind: 'project', name: p, re: new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })),
       ...(ents.machine || []).map((m) => ({ kind: 'machine', name: m, re: new RegExp(`(^|[^A-Za-z0-9-])${m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^A-Za-z0-9-])`, 'i') })),
@@ -313,8 +331,8 @@ export function createExtras(ctx) {
     const nodes = new Map();
     const edges = new Map();
     const docs = [];
-    for (const e of active()) docs.push({ text: `${e.meta.title}\n${e.body}`, project: e.meta.project, date: localDay(e.meta.updated), ev: { id: e.meta.id, title: e.meta.title, type: e.meta.type } });
-    for (const [d, o] of conv.journal()) for (const [key, s] of Object.entries(o)) docs.push({ text: `${s.summary} ${(s.points || []).join(' ')}`, project: s.project, date: d, ev: { ref: conv.refOf(key), title: s.summary, type: 'journal' } });
+    for (const e of activeOf(scope)) docs.push({ text: `${e.meta.title}\n${e.body}`, project: e.meta.project, date: localDay(e.meta.updated), ev: { id: e.meta.id, title: e.meta.title, type: e.meta.type } });
+    for (const [d, o] of conv.journal()) for (const [key, s] of Object.entries(o)) if (segOk(scope, key, s)) docs.push({ text: `${s.summary} ${(s.points || []).join(' ')}`, project: s.project, date: d, ev: { ref: conv.refOf(key), title: s.summary, type: 'journal' } });
     for (const doc of docs) {
       const found = new Map();
       if (doc.project && projs.includes(doc.project)) found.set(`project:${doc.project}`, { kind: 'project', name: doc.project });
@@ -351,13 +369,15 @@ export function createExtras(ctx) {
     const used = new Set(es.flatMap((e) => [e.a, e.b]));
     const ns = [...nodes.values()].filter((n) => nodeOk(n.id) && (used.has(n.id) || n.kind === 'project'));
     const data = { nodes: ns, edges: es };
-    graphCache = { sig, data };
+    graphCache.set(hk, { sig, data });
+    if (graphCache.size > 8) graphCache.delete(graphCache.keys().next().value);
     return data;
   }
-  function entity(name) {
-    const g = graph();
+  function entity(name, scope) {
+    const g = graph(scope);
     const q = String(name || '').toLowerCase().trim();
     if (!q) return '给个名字：项目名、机器名、客户现场或版本号。';
+    if (scope?.on && !scope.project(q)) return '知识图谱里没有这个实体。';
     const node = g.nodes.find((n) => n.name.toLowerCase() === q) || g.nodes.find((n) => n.name.toLowerCase().includes(q));
     if (!node) return `知识图谱里没有「${name}」。现有的实体有：${[...new Set(g.nodes.filter((n) => n.kind !== 'version').map((n) => n.name))].slice(0, 50).join('、')}`;
     const KIND = { project: '项目', machine: '机器', site: '客户现场', version: '版本' };
@@ -425,7 +445,7 @@ export function createExtras(ctx) {
     if (!cacheVec) cacheVec = Object.entries(vec.items).map(([k, x]) => [k, fromB64(x.v)]);
     return cacheVec;
   }
-  async function semantic(query, { limit = 10, kind = '' } = {}) {
+  async function semantic(query, { limit = 10, kind = '', scope } = {}) {
     if (!CFG.embed_url) return null;
     let qv;
     try { qv = (await embed([String(query)]))[0]; } catch { return null; }
@@ -439,14 +459,15 @@ export function createExtras(ctx) {
     }
     scored.sort((a, b) => b[1] - a[1]);
     const out = [];
-    for (const [k, s] of scored.slice(0, limit)) {
+    for (const [k, s] of (scope?.on ? scored : scored.slice(0, limit))) {
+      if (out.length >= limit) break;
       if (k.startsWith('m:')) {
         const e = store.get(k.slice(2));
-        if (e) out.push({ kind: 'memory', score: s, id: e.meta.id, type: e.meta.type, title: e.meta.title, project: e.meta.project || '', date: localDay(e.meta.updated), source: `${e.meta.author}/${e.meta.client}` });
+        if (e && entryOk(scope, e)) out.push({ kind: 'memory', score: s, id: e.meta.id, type: e.meta.type, title: e.meta.title, project: e.meta.project || '', date: localDay(e.meta.updated), source: `${e.meta.author}/${e.meta.client}` });
       } else {
         const [d, key] = k.slice(2).split('|');
         const seg = conv.journal().get(d)?.[key];
-        if (seg) out.push({ kind: 'journal', score: s, ref: conv.refOf(key), date: d, title: seg.summary, project: seg.project || '', source: `${seg.device}/${seg.tool}` });
+        if (seg && segOk(scope, key, seg)) out.push({ kind: 'journal', score: s, ref: conv.refOf(key), date: d, title: seg.summary, project: seg.project || '', source: `${seg.device}/${seg.tool}` });
       }
     }
     return out;

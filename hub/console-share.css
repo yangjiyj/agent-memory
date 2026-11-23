@@ -1,0 +1,22 @@
+/* 分享弹窗（console-share.js）：外壳沿用 console-memory.css 的 .mem-modal / .mem-dlg，这里只管里面的内容 */
+.sh-dlg { width: min(520px, calc(100vw - 32px)); }
+.sh-dlg h3 { margin-bottom: 14px; }
+.sh-proj { color: var(--accent); }
+.sh-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.sh-row button { font: inherit; font-size: 13px; color: var(--text-secondary); background: transparent; border: 1px solid var(--panel-line); border-radius: 8px; padding: 4px 16px; cursor: pointer; transition: .15s; }
+.sh-row button:hover { color: var(--text-primary); border-color: rgba(134, 182, 239, .4); }
+.sh-row button.on { color: var(--text-primary); background: rgba(57, 135, 229, .18); border-color: rgba(134, 182, 239, .5); }
+.sh-act { margin: 14px 0; }
+.sh-out { display: flex; gap: 6px; margin-bottom: 4px; }
+.sh-out[hidden], .sh-note[hidden] { display: none; }
+.sh-out .inp { flex: 1; min-width: 0; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+.sh-note { margin-bottom: 4px; font-size: 12px; color: var(--text-muted); }
+.sh-list h4 { margin: 16px 0 4px; font-size: 12px; font-weight: 500; letter-spacing: 1px; color: var(--text-muted); }
+.sh-it { display: grid; grid-template-columns: 52px 1fr auto auto; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--panel-line); font-size: 13px; }
+.sh-it .e { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.sh-it .c { color: var(--text-muted); font-size: 12px; }
+.ho button:disabled { opacity: .5; cursor: default; }
+@media (max-width: 520px) {
+  .sh-it { grid-template-columns: 52px 1fr auto; }
+  .sh-it .c { display: none; }
+}

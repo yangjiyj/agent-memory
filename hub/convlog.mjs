@@ -53,6 +53,7 @@ export function createConvLog(ctx) {
   const keyOf = (device, tool, sid) => `${device}__${tool}__${sid}`.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 200);
   const refOf = (key) => crypto.createHash('sha256').update(key).digest('hex').slice(0, 8);
   let refMap = null;
+  let ver = 0; // 索引或日志有变化就加一，隐藏名单的缓存按它作废
   function resolve(ref) {
     const r = String(ref || '').trim().replace(/^ref:/, '');
     if (index[r]) return r;
@@ -67,6 +68,7 @@ export function createConvLog(ctx) {
   // 设备增量上传：base 必须等于中心已有条数，否则回告实际条数让设备对齐；replace 时整份重来
   function append(p, who) {
     recentCache = null;
+    ver++;
     if (!mounted()) throw new UserError('对话存档盘没挂上，稍后再传');
     const device = who.role === 'admin' && p.device ? String(p.device).replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40) : who.device;
     const tool = String(p.tool || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
@@ -130,6 +132,7 @@ export function createConvLog(ctx) {
     const e = index[key];
     delete index[key];
     refMap = null;
+    ver++;
     for (const f of [path.join(root, e.file), path.join(root, `${e.file.slice(0, -6)}.meta.json`)]) fs.rmSync(f, { force: true });
     saveIndex();
     const dates = Object.keys(e.days).filter((d) => journal.get(d)?.[key]);
@@ -138,6 +141,7 @@ export function createConvLog(ctx) {
       for (const d of dates) {
         const obj = journal.get(d);
         delete obj[key];
+        ver++;
         fs.writeFileSync(journalFile(d), `${JSON.stringify(obj, null, 1)}\n`);
       }
       await commit(`journal: 删掉 ${key} 的 ${dates.length} 段（设备判定不是人在聊）`, 'agent-memory/journal', ['journal']);
@@ -179,6 +183,7 @@ export function createConvLog(ctx) {
     }
     index = next;
     refMap = null;
+    ver++;
     writeIndex();
     return Object.keys(index).length;
   }
@@ -200,6 +205,24 @@ export function createConvLog(ctx) {
   loadJournal();
 
   const today = () => localDay(nowIso());
+
+  // ------------------------------------------------ 浏览者可见范围（隐藏项目）----
+  // scope = { on, hideKey, project(p) }（server.mjs 的 scopeOf 给的）；没有 scope 或 on 为 false 就什么都不过滤。
+  // 会话归属哪个项目：以工作日志里它各天的段为准，只要有一段落在隐藏项目里，整个会话（原文、标题、各天的段）对这个浏览者都不可见；
+  // 还没写日志的会话，看工作目录路径里有没有哪一段正好是隐藏项目名；都归不到项目的会话照常可见。
+  const hiddenCache = new Map();
+  function hiddenKeys(scope) {
+    if (!scope?.on) return null;
+    const c = hiddenCache.get(scope.hideKey);
+    if (c && c.ver === ver) return c.set;
+    const set = new Set();
+    for (const o of journal.values()) for (const [key, s] of Object.entries(o)) if (s.project && !scope.project(s.project)) set.add(key);
+    for (const [key, e] of Object.entries(index)) if (String(e.cwd || '').split(/[\\/]+/).some((x) => x && !scope.project(x))) set.add(key);
+    hiddenCache.set(scope.hideKey, { ver, set });
+    if (hiddenCache.size > 16) hiddenCache.delete(hiddenCache.keys().next().value);
+    return set;
+  }
+  const keyOk = (scope, key) => !scope?.on || !hiddenKeys(scope).has(key);
 
   // 等着写日志的段：今天以前的段（或今天已经闲了 90 分钟的段），没写过或写完之后又多了消息
   function pending({ limit = 50, includeToday = false } = {}) {
@@ -254,6 +277,7 @@ export function createConvLog(ctx) {
         const obj = journal.get(it.date) || {};
         obj[it.key] = seg;
         journal.set(it.date, obj);
+        ver++;
         touched.add(it.date);
         n++;
       }
@@ -286,18 +310,19 @@ export function createConvLog(ctx) {
   }
 
   // 一天里所有的段：写过日志的用日志，没写的用会话标题
-  function segmentsOf(d) {
+  function segmentsOf(d, scope) {
     const out = [];
+    const hid = hiddenKeys(scope);
     const j = journal.get(d) || {};
     for (const [key, e] of Object.entries(index)) {
       const day = e.days[d];
-      if (!day || !day.users || AUTO_CWD.test(e.cwd || '')) continue;
+      if (!day || !day.users || AUTO_CWD.test(e.cwd || '') || hid?.has(key)) continue;
       const seg = j[key];
       out.push({ key, ref: refOf(key), date: d, device: e.device, tool: e.tool, title: e.title || seg?.title || '', cwd: e.cwd || '',
         first: day.first, last: day.last, n: day.n, approx: Boolean(e.approx), project: seg?.project || '', summary: seg?.summary || '', points: seg?.points || [],
         status: seg?.status || '', stale: seg ? seg.n < day.n : false, written: Boolean(seg) });
     }
-    for (const [key, seg] of Object.entries(j)) if (!index[key]) out.push({ key, ref: refOf(key), ...seg, written: true });
+    for (const [key, seg] of Object.entries(j)) if (!index[key] && !hid?.has(key)) out.push({ key, ref: refOf(key), ...seg, written: true });
     return out.sort((a, b) => String(a.first).localeCompare(String(b.first)));
   }
 
@@ -380,8 +405,9 @@ export function createConvLog(ctx) {
   // ---------------------------------------------------- search / read ----
 
   // 搜原文：返回结构化结果（控制台接口用）；search() 把它排成给模型看的文本
-  function searchData(args = {}) {
+  function searchData(args = {}, scope) {
     if (!mounted()) return { error: '对话存档盘没挂上，暂时搜不了。' };
+    const hid = hiddenKeys(scope);
     const words = String(args.query || '').toLowerCase().split(/\s+/).filter(Boolean);
     if (!words.length) return { error: '请给关键词（空格分隔，全部命中）。' };
     const limit = Math.min(Math.max(parseInt(args.limit, 10) || 10, 1), 30);
@@ -396,7 +422,7 @@ export function createConvLog(ctx) {
     for (const f of (g.stdout || '').split('\n').filter(Boolean)) {
       const key = byFile.get(path.resolve(f.trim()));
       const e = key && index[key];
-      if (!e || (dev && !e.device.toLowerCase().includes(dev)) || (tool && !e.tool.toLowerCase().includes(tool))) continue;
+      if (!e || hid?.has(key) || (dev && !e.device.toLowerCase().includes(dev)) || (tool && !e.tool.toLowerCase().includes(tool))) continue;
       const msgs = readMessages(e);
       const found = [];
       msgs.forEach((m, i) => {
@@ -438,10 +464,10 @@ export function createConvLog(ctx) {
   const CUT = '…（截断，加 full=true 看全文）';
 
   // 读一个会话：返回结构化结果（控制台接口用）；get() 把它排成给模型看的文本
-  function getData(args = {}) {
+  function getData(args = {}, scope) {
     if (!mounted()) return { error: '对话存档盘没挂上，暂时读不了。' };
     const key = resolve(args.ref || args.key);
-    if (!key) return { error: `没有这个会话：${args.ref || args.key || '（没给 ref）'}。ref 来自 memory_timeline 或 conversation_search 的结果。` };
+    if (!key || !keyOk(scope, key)) return { error: `没有这个会话：${args.ref || args.key || '（没给 ref）'}。ref 来自 memory_timeline 或 conversation_search 的结果。` };
     const e = index[key];
     let msgs = readMessages(e).map((m, i) => ({ ...m, i: i + 1 }));
     const date = parseDate(args.date, '');
@@ -493,11 +519,14 @@ export function createConvLog(ctx) {
 
   // ------------------------------------------------------ 可视化大屏 ----
 
-  let vizCache = null;
-  // 全量汇总：每天的段数/消息数/各项目段数，机器→智能体→项目的流向，总数
-  function vizData() {
+  const vizCache = new Map(); // hideKey（不过滤是空串）-> { sig, data }
+  // 全量汇总：每天的段数/消息数/各项目段数，机器→智能体→项目的流向，总数；scope 给了就只算浏览者看得到的
+  function vizEntry(scope) {
+    const hid = hiddenKeys(scope);
+    const hk = scope?.on ? scope.hideKey : '';
     const sig = `${Object.keys(index).length}:${Object.values(index).reduce((a, e) => a + e.n, 0)}:${[...journal.values()].reduce((a, o) => a + Object.keys(o).length, 0)}:${meta.last_result || ''}`;
-    if (vizCache?.sig === sig) return vizCache.data;
+    const hit = vizCache.get(hk);
+    if (hit?.sig === sig) return hit;
     const dates = new Set([...journal.keys()]);
     for (const e of Object.values(index)) for (const d of Object.keys(e.days)) dates.add(d);
     const days = {};
@@ -509,8 +538,8 @@ export function createConvLog(ctx) {
     let msgs = 0;
     let chars = 0;
     let sessions = 0;
-    for (const e of Object.values(index)) {
-      if (AUTO_CWD.test(e.cwd || '')) continue;
+    for (const [key, e] of Object.entries(index)) {
+      if (AUTO_CWD.test(e.cwd || '') || hid?.has(key)) continue;
       if (!Object.values(e.days).some((d) => d.users)) continue;
       sessions++;
       msgs += e.n;
@@ -519,7 +548,7 @@ export function createConvLog(ctx) {
       tools.add(e.tool);
     }
     for (const d of [...dates].sort()) {
-      const segs = segmentsOf(d);
+      const segs = segmentsOf(d, scope);
       if (!segs.length) continue;
       const row = { s: segs.length, m: 0, u: 0, p: {} };
       for (const s of segs) {
@@ -535,15 +564,18 @@ export function createConvLog(ctx) {
     }
     const data = {
       generated: nowIso(),
-      kpi: { sessions, messages: msgs, chars, days: Object.keys(days).length, devices: devices.size, tools: tools.size, journal_segments: [...journal.values()].reduce((a, o) => a + Object.keys(o).length, 0) },
+      kpi: { sessions, messages: msgs, chars, days: Object.keys(days).length, devices: devices.size, tools: tools.size, journal_segments: [...journal.values()].reduce((a, o) => a + Object.keys(o).filter((k) => !hid?.has(k)).length, 0) },
       days,
       projects: Object.entries(projTotal).sort((a, b) => b[1] - a[1]).map(([p, n]) => ({ p, n })),
       devTool: Object.entries(devTool).map(([k, n]) => { const [a, b] = k.split('|'); return { a, b, n }; }),
       toolProj: Object.entries(toolProj).map(([k, n]) => { const [a, b] = k.split('|'); return { a, b, n }; }),
     };
-    vizCache = { sig, data };
-    return data;
+    const entry = { sig, data };
+    vizCache.set(hk, entry);
+    if (vizCache.size > 16) vizCache.delete(vizCache.keys().next().value);
+    return entry;
   }
+  const vizData = (scope) => vizEntry(scope).data;
 
   // 每个会话的作息和字数统计（存进索引；有新消息时作废，用到时从存档重算，只算作废的那些）
   // hw：一周 168 个小时格（周一 0 点 = 0）里你发消息的次数；uc/ac：你/助手说的字数；night：凌晨 0–5 点你发的消息数；
@@ -574,15 +606,16 @@ export function createConvLog(ctx) {
     saveIndex();
     return st;
   }
-  const liveEntries = () => Object.entries(index).filter(([, e]) => !AUTO_CWD.test(e.cwd || '') && Object.values(e.days).some((d) => d.users));
+  const liveEntries = (scope) => { const hid = hiddenKeys(scope); return Object.entries(index).filter(([key, e]) => !hid?.has(key) && !AUTO_CWD.test(e.cwd || '') && Object.values(e.days).some((d) => d.users)); };
 
   // 大事记：日志里"上线、发布、交付、升级现场、合并 main、迁移完成"这类（前面带"未/没/待/尚未"的不算）
   const MILESTONE = /(上线|发布|交付|升级(?:到|至)?|合(?:入|并|进)\s*main|已合\s*main|迁移完成|搬到|部署到|正式启用|投入使用)/g;
-  function milestones() {
+  function milestones(hid) {
     const out = [];
     const seen = new Set();
     for (const d of [...journal.keys()].sort()) {
       for (const [key, s] of Object.entries(journal.get(d))) {
+        if (hid?.has(key)) continue;
         const e = index[key];
         if (e && AUTO_CWD.test(e.cwd || '')) continue;
         const text = s.summary || '';
@@ -601,38 +634,43 @@ export function createConvLog(ctx) {
     return out;
   }
 
-  let extraCache = null;
+  const extraCache = new Map();
   // 大屏的附加数据：作息打卡（全部 / 按智能体）、大事记、每天一两句代表性日志（回放用）
-  function vizExtra() {
-    vizData();
-    const sig = vizCache.sig;
-    if (extraCache?.sig === sig) return extraCache.data;
+  function vizExtra(scope) {
+    const hid = hiddenKeys(scope);
+    const hk = scope?.on ? scope.hideKey : '';
+    const sig = vizEntry(scope).sig;
+    const hit = extraCache.get(hk);
+    if (hit?.sig === sig) return hit.data;
     const punch = { all: Array(168).fill(0), byTool: {} };
-    for (const [, e] of liveEntries()) {
+    for (const [, e] of liveEntries(scope)) {
       const st = ensureStats(e);
       const arr = (punch.byTool[e.tool] ||= Array(168).fill(0));
       for (const [i, n] of Object.entries(st.hw)) { punch.all[i] += n; arr[i] += n; }
     }
     const highlights = {};
     for (const [d, o] of journal) {
-      const xs = Object.entries(o).filter(([k]) => !index[k] || !AUTO_CWD.test(index[k].cwd || '')).map(([, s]) => s)
+      const xs = Object.entries(o).filter(([k]) => !hid?.has(k) && (!index[k] || !AUTO_CWD.test(index[k].cwd || ''))).map(([, s]) => s)
         .sort((a, b) => (b.n || 0) - (a.n || 0)).slice(0, 2).map((s) => ({ p: s.project || '', t: short(s.summary, 46) }));
       if (xs.length) highlights[d] = xs;
     }
-    const data = { punch, milestones: milestones(), highlights };
-    extraCache = { sig, data };
+    const data = { punch, milestones: milestones(hid), highlights };
+    extraCache.set(hk, { sig, data });
+    if (extraCache.size > 16) extraCache.delete(extraCache.keys().next().value);
     return data;
   }
 
   // 搜一个词：哪些天、哪些会话提到过（日志、会话标题和原文都算）
-  function searchDays(q) {
+  function searchDays(q, scope) {
     const words = String(q || '').toLowerCase().split(/\s+/).filter(Boolean).slice(0, 5);
     if (!words.length) return { q: '', dates: {}, sessions: 0 };
+    const hid = hiddenKeys(scope);
     const dates = {};
     const sessions = new Set();
     const hit = (d, key) => { (dates[d] ||= new Set()).add(key); sessions.add(key); };
     for (const [d, o] of journal) {
       for (const [key, s] of Object.entries(o)) {
+        if (hid?.has(key)) continue;
         const hay = `${s.summary} ${(s.points || []).join(' ')} ${s.title || ''} ${s.project || ''}`.toLowerCase();
         if (words.every((w) => hay.includes(w))) hit(d, key);
       }
@@ -644,7 +682,7 @@ export function createConvLog(ctx) {
       for (const f of (g.stdout || '').split('\n').filter(Boolean).slice(0, 1500)) {
         const key = byFile.get(path.resolve(f.trim()));
         const e = key && index[key];
-        if (!e || AUTO_CWD.test(e.cwd || '')) continue;
+        if (!e || AUTO_CWD.test(e.cwd || '') || hid?.has(key)) continue;
         for (const m of readMessages(e)) {
           const low = m.text.toLowerCase();
           if (words.every((w) => low.includes(w))) hit(localDay(m.ts), key);
@@ -656,15 +694,15 @@ export function createConvLog(ctx) {
   }
 
   // 年度报告：一页页卡片要的数
-  function wrapped() {
-    const v = vizData();
-    const ex = vizExtra();
+  function wrapped(scope) {
+    const v = vizData(scope);
+    const ex = vizExtra(scope);
     const daysSorted = Object.keys(v.days).sort();
     let uc = 0; let ac = 0; let un = 0; let night = 0; let late = null;
     const short = {};
     const toolSeg = {}; const devSeg = {};
     const nightDays = new Set();
-    for (const [key, e] of liveEntries()) {
+    for (const [key, e] of liveEntries(scope)) {
       const st = ensureStats(e);
       uc += st.uc; ac += st.ac; un += st.un; night += st.night;
       if (st.late && (!late || st.late.mins > late.mins)) late = { ...st.late, key, title: e.title, device: e.device, tool: e.tool };
@@ -710,9 +748,9 @@ export function createConvLog(ctx) {
   }
 
   // 星图：每个会话一个点（主项目、智能体、机器、开始日期、消息数、标题）
-  function vizGalaxy() {
+  function vizGalaxy(scope) {
     const out = [];
-    for (const [key, e] of liveEntries()) {
+    for (const [key, e] of liveEntries(scope)) {
       const pc = {};
       for (const d of Object.keys(e.days)) { const p = journal.get(d)?.[key]?.project; if (p) pc[p] = (pc[p] || 0) + 1; }
       const p = Object.entries(pc).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
@@ -722,11 +760,11 @@ export function createConvLog(ctx) {
   }
 
   // 实时作战室：各机器各智能体最近一条消息的时间、在聊什么；最近动态
-  function vizLive() {
+  function vizLive(scope) {
     const now = Date.now();
     const byDev = {};
     const recent = [];
-    for (const [key, e] of liveEntries()) {
+    for (const [key, e] of liveEntries(scope)) {
       if (!e.last) continue;
       const age = (now - Date.parse(e.last)) / 60000;
       const d = (byDev[e.device] ||= {});
@@ -740,7 +778,7 @@ export function createConvLog(ctx) {
     recent.sort((a, b) => String(b.t).localeCompare(String(a.t)));
     const t = today();
     let segs = 0; let msgs = 0;
-    for (const [, e] of liveEntries()) { const x = e.days[t]; if (x?.users) { segs++; msgs += x.n; } }
+    for (const [, e] of liveEntries(scope)) { const x = e.days[t]; if (x?.users) { segs++; msgs += x.n; } }
     return { now: nowIso(), devices: byDev, recent: recent.slice(0, 14), today: { segments: segs, messages: msgs } };
   }
 
@@ -769,35 +807,40 @@ export function createConvLog(ctx) {
       }
     } finally { fs.closeSync(fd); }
   }
-  function recentMessages(sinceMs) {
+  function recentMessages(sinceMs, scope) {
     if (!recentCache || recentCache.since > sinceMs || Date.now() - recentCache.at > 60e3) {
       const since = sinceMs - 3600e3;
-      const by = {};
-      for (const e of Object.values(index)) {
+      const rows = [];
+      for (const [key, e] of Object.entries(index)) {
         if (!e.last || Date.parse(e.last) < since || AUTO_CWD.test(e.cwd || '')) continue;
         const ts = tailTimes(e, since);
-        if (ts.length) ((by[e.device] ||= {})[e.tool] ||= []).push(...ts);
+        if (ts.length) rows.push({ key, device: e.device, tool: e.tool, ts });
       }
-      recentCache = { at: Date.now(), since, by };
+      recentCache = { at: Date.now(), since, rows };
     }
+    const hid = hiddenKeys(scope);
     const out = {};
-    for (const [d, tools] of Object.entries(recentCache.by)) {
-      for (const [t, xs] of Object.entries(tools)) {
-        const ys = xs.filter((x) => x >= sinceMs);
-        if (ys.length) (out[d] ||= {})[t] = ys;
-      }
+    for (const r of recentCache.rows) {
+      if (hid?.has(r.key)) continue;
+      const arr = ((out[r.device] ||= {})[r.tool] ||= []);
+      for (const x of r.ts) if (x >= sinceMs) arr.push(x);
+    }
+    for (const [d, tools] of Object.entries(out)) {
+      for (const t of Object.keys(tools)) if (!tools[t].length) delete tools[t];
+      if (!Object.keys(tools).length) delete out[d];
     }
     return out;
   }
 
   // 近几天每个项目有哪些设备、哪些智能体参与过（项目名取工作日志里写的；一个会话跨几天只算一次），给拓扑页的项目筛选用。
   // 最近有活动的项目在前。
-  function projectMembers(days = 7) {
+  function projectMembers(days = 7, scope) {
     const by = new Map();
+    const hid = hiddenKeys(scope);
     for (let i = 0; i < days; i++) {
       const d = localDay(new Date(Date.now() - i * 86400e3).toISOString());
       for (const [key, seg] of Object.entries(journal.get(d) || {})) {
-        if (!seg.project) continue;
+        if (!seg.project || hid?.has(key)) continue;
         const e = index[key];
         if (e && AUTO_CWD.test(e.cwd || '')) continue;
         const device = e?.device || seg.device; const tool = e?.tool || seg.tool; const last = e?.days[d]?.last || seg.last;
@@ -819,19 +862,20 @@ export function createConvLog(ctx) {
   }
 
   // 最近有新消息的会话（一个会话一条，时间是它最近一条消息），给拓扑页的事件流用
-  function recentSessions(sinceMs) {
+  function recentSessions(sinceMs, scope) {
     const out = [];
+    const hid = hiddenKeys(scope);
     for (const [key, e] of Object.entries(index)) {
-      if (!e.last || !e.n || Date.parse(e.last) <= sinceMs || AUTO_CWD.test(e.cwd || '')) continue;
+      if (!e.last || !e.n || Date.parse(e.last) <= sinceMs || AUTO_CWD.test(e.cwd || '') || hid?.has(key)) continue;
       out.push({ ref: refOf(key), device: e.device, tool: e.tool, last: e.last, project: journal.get(localDay(e.last))?.[key]?.project || '' });
     }
     return out;
   }
 
   // 某一天的全部段（泳道图和详情用）
-  function vizDay(date) {
+  function vizDay(date, scope) {
     const d = parseDate(date, today());
-    return { date: d, weekday: weekday(d), segments: segmentsOf(d).map((s) => ({
+    return { date: d, weekday: weekday(d), segments: segmentsOf(d, scope).map((s) => ({
       device: s.device, tool: s.tool, title: s.title, first: s.first, last: s.last, approx: s.approx, n: s.n,
       project: s.project || '', summary: s.summary, points: s.points, status: s.status, ref: s.ref,
     })) };
@@ -839,12 +883,14 @@ export function createConvLog(ctx) {
 
   // ------------------------------------------------------- reporting ----
 
-  function stats() {
+  function stats(scope) {
     const t = today();
     const y = localDay(new Date(Date.now() - 86400e3).toISOString());
     let sessions = 0; let chars = 0; let ySegs = 0; let tSegs = 0;
     const byDev = {};
-    for (const e of Object.values(index)) {
+    const hid = hiddenKeys(scope);
+    for (const [key, e] of Object.entries(index)) {
+      if (hid?.has(key)) continue;
       sessions++;
       chars += e.chars;
       byDev[`${e.device}/${e.tool}`] = (byDev[`${e.device}/${e.tool}`] || 0) + 1;
@@ -879,5 +925,5 @@ export function createConvLog(ctx) {
     return out;
   }
 
-  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, recentMessages, recentSessions, projectMembers, readMessages, index: () => index, journal: () => journal, refOf };
+  return { keyOk, hiddenKeys, vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, recentMessages, recentSessions, projectMembers, readMessages, index: () => index, journal: () => journal, refOf };
 }
