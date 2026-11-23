@@ -15,6 +15,11 @@
  *   GET  topology/events    拓扑页的事件流：?since=<ISO>&limit=<n，默认 30，最多 100>&project=<项目名，只给这个项目的对话>
  *   GET  settings           POST settings           白名单配置项
  *   GET  conv/search        GET  conv/<ref>         对话存档
+ *   GET  shares             POST shares             只读分享链接：列出 / 生成（项目时间线或交接包，有效期 1/7/30 天）
+ *   POST shares/revoke      作废一个分享链接（见 admin-access.mjs）
+ *
+ * 浏览者那台设备设了 hide_projects 时，上面各接口都不给被隐藏项目的内容（口径见 server.mjs 的 scopeOf，和 MCP 工具里的 visible() 一致）；
+ * 这样的浏览者也不能改任何设备的 hide_projects（否则自己清掉就绕过去了）。
  */
 
 import fs from 'node:fs';
@@ -27,7 +32,7 @@ import fs from 'node:fs';
 //
 // [E] import 位
 //
-// [F] import 位
+import { createAccess } from './admin-access.mjs'; // [F] import 位
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -108,7 +113,7 @@ export function createAdmin(ctx) {
     heartbeatFile, agentsOverview, watch, git, tools, store, conv, extras, pipe, deviceSet, newJoinCode, VERSION, agentVersion,
     redactSecrets, lastRequest, usageTail,
   } = ctx;
-  const { listJoinCodes, revokeJoinCode } = ctx;
+  const { listJoinCodes, revokeJoinCode, scopeOf } = ctx;
 
   // ---- 配置读写：先写临时文件再改名，原文件留一份 .bak，并当场更新内存里的 CFG ----
   function saveConfig(changes) {
@@ -142,10 +147,12 @@ export function createAdmin(ctx) {
   const audit = (viewer, action, detail) => logUsage({ device: viewer, client: 'console' }, `console:${action}`, detail);
 
   // ---- devices ----
-  function devices() {
+  // 各设备的 hide_projects：限制可见范围的浏览者只看到自己也看得到的项目名
+  const hideList = (d, scope) => (d.hide_projects || []).filter((x) => !scope?.on || scope.project(x));
+  function devices(scope) {
     const hb = readJSON(heartbeatFile(), {});
     const peers = readJSON(peersFile(), {});
-    const cells = Object.fromEntries(agentsOverview().devices.map((d) => [d.name, d.cells]));
+    const cells = Object.fromEntries(agentsOverview(scope).devices.map((d) => [d.name, d.cells]));
     const labels = CFG.device_labels || {};
     const list = Object.entries(loadTokens().devices || {}).map(([name, d]) => ({
       name,
@@ -159,12 +166,12 @@ export function createAdmin(ctx) {
       last_seen: hb[name]?.last_seen || null,
       agents: cells[name] || {},
       wiring: hb[name]?.wiring || {},
-      policy: { readonly: Boolean(d.readonly), hide_projects: d.hide_projects || [], paused: Boolean(d.paused), stale_hours: d.stale_hours || null },
+      policy: { readonly: Boolean(d.readonly), hide_projects: hideList(d, scope), paused: Boolean(d.paused), stale_hours: d.stale_hours || null },
     }));
     return { default_stale_hours: CFG.stale_hours || DEFAULTS.stale_hours, devices: list };
   }
 
-  function setDevice(name, body, viewer) {
+  function setDevice(name, body, viewer, scope) {
     if (!loadTokens().devices?.[name]) throw new HttpError(404, `没有设备 ${name}`);
     if (!isObj(body)) throw bad('请求体必须是 JSON 对象');
     const changes = {};
@@ -173,13 +180,16 @@ export function createAdmin(ctx) {
       else if (k === 'readonly' || k === 'paused') {
         if (typeof v !== 'boolean') throw bad(`${k} 必须是 true 或 false`);
         changes[k] = v;
-      } else if (k === 'hide_projects') changes[k] = strList(v, 'hide_projects', { max: 100, len: 60 });
+      } else if (k === 'hide_projects') {
+        if (scope?.on) throw new HttpError(403, '这台机器的可见范围受限，不能修改隐藏项目。');
+        changes[k] = strList(v, 'hide_projects', { max: 100, len: 60 });
+      }
       else throw bad(`不认识的字段 ${k}（可改：readonly、hide_projects、paused、stale_hours）`);
     }
     if (!Object.keys(changes).length) throw bad('没有要改的字段');
     const policy = deviceSet(name, changes);
     audit(viewer, 'device-set', `${name} ${Object.keys(changes).join(',')}`);
-    return { ok: true, name, policy };
+    return { ok: true, name, policy: scope?.on ? { ...policy, hide_projects: hideList(policy, scope) } : policy };
   }
 
   function joinCode(body, viewer) {
@@ -233,7 +243,7 @@ export function createAdmin(ctx) {
   }
 
   // ---- jobs ----
-  async function jobs() {
+  async function jobs(scope) {
     const hb = readJSON(heartbeatFile(), {});
     const syncDevices = Object.entries(loadTokens().devices || {}).filter(([, d]) => (d.role || 'device') === 'device').map(([name, d]) => {
       const seen = hb[name]?.last_seen || null;
@@ -241,12 +251,14 @@ export function createAdmin(ctx) {
       const paused = Boolean(d.paused);
       return { name, last_seen: seen, stale_hours: limit, paused, stale: !paused && (!seen || (Date.now() - Date.parse(seen)) / 3600e3 > limit) };
     });
-    const cs = conv().stats();
+    const cs = conv().stats(scope);
     const autos = readJsonl(`${CFG.state}/auto-approve.jsonl`, 0);
     let last_commit = null;
     try {
       const [time, author, ...subject] = (await git('log', '-1', '--format=%cI%x09%an%x09%s')).stdout.trim().split('\t');
-      if (time) last_commit = { time, author, subject: subject.join('\t') };
+      // 提交说明里带着记忆的标题（remember(类型): 标题 / update: 标题 / retire: 标题），限制可见范围的浏览者只给动作
+      const subj = subject.join('\t');
+      if (time) last_commit = { time, author, subject: scope?.on ? subj.replace(/^((?:remember\([a-z]+\)|update|retire)):[\s\S]*$/, '$1') : subj };
     } catch { /* 还没有提交 */ }
     return {
       now: nowIso(),
@@ -287,13 +299,13 @@ export function createAdmin(ctx) {
   // 上行 up = 写入量 = 对话存档里新增的消息数 + remember/update/retire 的调用次数（两者都是"设备往中心送了东西"）；
   // 下行 down = 读取类调用次数（search/get/timeline/todos/handoff/entities/conversation_*/kb_* 等）；
   // hours 是上行同口径按小时分的 24 格（最旧在前，最后一格是最近一小时），所以 sum(hours) === up_24h。
-  function flows(now) {
+  function flows(now, scope) {
     const from = now - DAY;
     const bucket = (ms) => Math.min(23, Math.max(0, Math.floor((ms - from) / 3600e3)));
     const out = {};
     const of = (dev) => (out[dev] ||= { up_24h: 0, down_24h: 0, hours: Array(24).fill(0), agents: {} });
     const ag = (f, tool) => (f.agents[tool] ||= { up_24h: 0, down_24h: 0 });
-    for (const [dev, tools] of Object.entries(conv().recentMessages(from))) {
+    for (const [dev, tools] of Object.entries(conv().recentMessages(from, scope))) {
       const f = of(dev);
       for (const [tool, xs] of Object.entries(tools)) {
         for (const ms of xs) { if (ms > now) continue; f.up_24h++; f.hours[bucket(ms)]++; ag(f, tool).up_24h++; }
@@ -311,12 +323,13 @@ export function createAdmin(ctx) {
   }
 
   async function topology(viewer, req) {
-    const dv = devices();
-    const jb = await jobs();
+    const scope = scopeOf(viewer);
+    const dv = devices(scope);
+    const jb = await jobs(scope);
     const stale = Object.fromEntries(jb.sync.devices.map((d) => [d.name, d.stale]));
     const hb = readJSON(heartbeatFile(), {});
     const now = Date.now();
-    const fl = flows(now);
+    const fl = flows(now, scope);
     const hubFlow = { up_24h: 0, down_24h: 0 };
 
     const list = dv.devices.filter((d) => d.role === 'device').map((d) => {
@@ -363,7 +376,7 @@ export function createAdmin(ctx) {
 
     // 近 7 天各项目的参与者，只留还在设备列表里的；最多 12 个项目
     const known = new Set(list.map((d) => d.name));
-    const projects = conv().projectMembers(7).map((p) => {
+    const projects = conv().projectMembers(7, scope).map((p) => {
       const members = p.members.filter((m) => known.has(m.device));
       return { name: p.name, sessions: members.reduce((a, m) => a + m.sessions, 0), last: members[0]?.last || p.last, members };
     }).filter((p) => p.members.length).slice(0, 12);
@@ -373,13 +386,13 @@ export function createAdmin(ctx) {
       now: nowIso(),
       hub: {
         version: VERSION, agent_version: agentVersion(), public_url: CFG.public_url || '', calls_7d: calls7,
-        memories: [...store.values()].filter((e) => e.meta.state === 'active').length,
+        memories: [...store.values()].filter((e) => e.meta.state === 'active' && scope.entry(e)).length,
         up_24h: hubFlow.up_24h, down_24h: hubFlow.down_24h,
       },
       gate: { enabled: secret, devices: secret ? list.filter((d) => d.identity === 'gateway').length : 0 },
       devices: list,
       projects,
-      storage: { repo: { entries: store.size, last_commit: jb.repo.last_commit }, archive: jb.archive },
+      storage: { repo: { entries: scope.on ? [...store.values()].filter((e) => scope.entry(e)).length : store.size, last_commit: jb.repo.last_commit }, archive: jb.archive },
       extractors: byRole('extractor', () => extractorLast),
       reporters: byRole('reporter', (name) => lastCall[name] || null),
       pending: { sessions: jb.extract.pending, errors: jb.extract.error, journal: jb.journal.pending, proposed: jb.extract.proposed },
@@ -391,7 +404,8 @@ export function createAdmin(ctx) {
 
   // ---- topology/events ----
   // 事件流：usage.jsonl 的尾部（读写、报表、抽取、控制台操作）加上对话存档里最近有新消息的会话。
-  // 控制台现有接口都不按浏览者的 hide_projects 过滤（浏览者本来就是你自己的机器），这里保持一致。
+  // 浏览者设了 hide_projects 时：对话事件按会话归属的项目过滤（不给被隐藏项目的会话、也不接受 project=被隐藏项目）；
+  // 调用记录里的细节（查询词、标题）归不到项目，这样的浏览者只看到"查了记忆""写了一条记忆"，不带引号里的内容。
   const short = (v, n = 40) => { const t = String(v || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
   const READ_TEXT = {
     search: '查了记忆', get: '读了一条记忆', timeline: '看了时间线', todos: '看了待办', handoff: '生成了交接包', entities: '查了实体',
@@ -406,13 +420,13 @@ export function createAdmin(ctx) {
   const EXTRACT_TEXT = { session: '抽取了一个会话', journal: '写了一段工作日志' };
   const withD = (base, d, quote) => { const t = short(redactSecrets(d || '')); return t && quote ? `${base}「${t}」` : base; };
 
-  function eventOf(u) {
+  function eventOf(u, plain) {
     const id = `u${u.at}`;
     const mk = (kind, text, tool) => ({ id, t: new Date(u.ms).toISOString(), kind, device: u.device, tool: tool || null, text });
     if (isCall(u.op)) {
       const name = u.op.replace(/^(tool|cli):/, '').replace(/^memory_/, '');
-      if (isWrite(u.op)) return mk('write', withD(WRITE_TEXT[name], u.d, name === 'remember'), u.client);
-      const quote = ['search', 'conversation_search', 'entities'].includes(name);
+      if (isWrite(u.op)) return mk('write', withD(WRITE_TEXT[name], u.d, name === 'remember' && !plain), u.client);
+      const quote = !plain && ['search', 'conversation_search', 'entities'].includes(name);
       return mk('read', withD(READ_TEXT[name] || (name.startsWith('kb_') ? '查了知识卡片' : '读了记忆'), u.d, quote), u.client);
     }
     if (u.op.startsWith('report:')) return mk('report', REPORT_TEXT[u.op.slice(7)] || '拉了报表');
@@ -421,7 +435,7 @@ export function createAdmin(ctx) {
     return null;
   }
 
-  function events(q) {
+  function events(q, scope) {
     let since = null;
     if (q.get('since')) {
       since = Date.parse(q.get('since'));
@@ -434,6 +448,7 @@ export function createAdmin(ctx) {
     }
     const project = q.get('project');
     if (project !== null && !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(project)) throw bad('project 不是合法的项目名');
+    if (project !== null && !scope.project(project)) return { now: nowIso(), events: [] };
     const now = Date.now();
     const floor = Math.max(since ?? 0, now - DAY); // 最多回看 24 小时
     const out = [];
@@ -443,11 +458,11 @@ export function createAdmin(ctx) {
       const u = rows[i];
       if (u.ms > now + 60e3) continue;
       if (u.ms <= floor) break;
-      const e = eventOf(u);
+      const e = eventOf(u, scope.on);
       if (e) out.push(e);
     }
     // 对话：一个会话一条，时间取它最近一条消息；同一会话之后又有新消息会换一个 id（带着时间）
-    for (const s of conv().recentSessions(floor)) {
+    for (const s of conv().recentSessions(floor, scope)) {
       if (project && s.project !== project) continue;
       out.push({ id: `c${s.ref}:${Date.parse(s.last)}`, t: s.last, kind: 'talk', device: s.device, tool: s.tool, text: s.project ? `在 ${short(s.project)} 有新对话` : '有新对话', ...(s.project ? { project: s.project } : {}) });
     }
@@ -500,7 +515,7 @@ export function createAdmin(ctx) {
   };
   const mountedOrFail = () => { if (!conv().mounted()) throw new HttpError(503, '对话存档盘没挂上，暂时查不了。'); };
 
-  function convSearch(q) {
+  function convSearch(q, scope) {
     const query = (q.get('q') || '').trim();
     if (!query) throw bad('请给关键词（q，空格分隔，全部命中）');
     let limit;
@@ -509,10 +524,10 @@ export function createAdmin(ctx) {
       if (!isInt(limit) || limit < 1 || limit > 30) throw bad('limit 必须是 1–30 之间的整数');
     }
     mountedOrFail();
-    return conv().searchData({ query, device: q.get('device') || '', tool: q.get('tool') || '', from: dateArg(q, 'from'), to: dateArg(q, 'to'), role: roleArg(q), limit });
+    return conv().searchData({ query, device: q.get('device') || '', tool: q.get('tool') || '', from: dateArg(q, 'from'), to: dateArg(q, 'to'), role: roleArg(q), limit }, scope);
   }
 
-  function convGet(ref, q) {
+  function convGet(ref, q, scope) {
     const date = dateArg(q, 'date');
     const role = roleArg(q);
     let from;
@@ -521,7 +536,7 @@ export function createAdmin(ctx) {
       if (!isInt(from) || from < 1) throw bad('from 必须是正整数');
     }
     mountedOrFail();
-    const r = conv().getData({ ref, date, role, from, full: q.get('full') === '1' || q.get('full') === 'true' });
+    const r = conv().getData({ ref, date, role, from, full: q.get('full') === '1' || q.get('full') === 'true' }, scope);
     if (r.error) throw new HttpError(404, '没有这个会话');
     return r;
   }
@@ -530,7 +545,8 @@ export function createAdmin(ctx) {
   // 每个 admin-<名字>.mjs 导出 createXxx(ctx, kit)，返回 { handle(req, res, url, sub, viewer) }：认领了这个请求就返回 true，否则返回 undefined。
   // kit 里是核心的小工具；出错抛 kit.HttpError / kit.bad，由下面的 handle 统一变成 4xx 和中文 error。
   // visibleTo(viewer, project)：浏览者按 hide_projects 能不能看这个项目（没有项目的内容都可见）；hiddenOf(viewer)：被隐藏的项目名（小写）
-  const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY, visibleTo: ctx.visibleTo, hiddenOf: ctx.hiddenOf };
+  // scopeOf(viewer)：一次取好浏览者的可见范围（{ on, project(p), entry(e), session(key) }），循环里用它，别在循环里反复调 visibleTo
+  const kit = { HttpError, bad, isObj, isInt, intIn, strList, httpUrl, audit, saveConfig, DAY, visibleTo: ctx.visibleTo, hiddenOf: ctx.hiddenOf, scopeOf: ctx.scopeOf };
   const exts = [
     // [B] 扩展位
     //
@@ -540,7 +556,7 @@ export function createAdmin(ctx) {
     //
     // [E] 扩展位
     //
-    // [F] 扩展位
+    createAccess(ctx, kit), // [F] 扩展位
   ];
 
   // ---- 路由 ----
@@ -550,26 +566,27 @@ export function createAdmin(ctx) {
       if (!viewer) throw new HttpError(403, '只有已经接入共享记忆的机器能用控制台（按 Tailscale 或虚拟机身份认，或者配置 console_viewer）。');
       const sub = url.pathname.slice('/console/api/'.length).replace(/\/+$/, '');
       const q = url.searchParams;
+      const scope = scopeOf(viewer);
       const method = req.method;
       const only = (m) => { if (method !== m) throw new HttpError(405, `这个接口只支持 ${m}`); };
       let m;
-      if (sub === 'devices') { only('GET'); return send(res, 200, devices()); }
-      if ((m = /^devices\/([^/]+)$/.exec(sub))) { only('POST'); return send(res, 200, setDevice(decodeURIComponent(m[1]), await readBody(req), viewer)); }
+      if (sub === 'devices') { only('GET'); return send(res, 200, devices(scope)); }
+      if ((m = /^devices\/([^/]+)$/.exec(sub))) { only('POST'); return send(res, 200, setDevice(decodeURIComponent(m[1]), await readBody(req), viewer, scope)); }
       if (sub === 'join-code') { only('POST'); return send(res, 200, joinCode(await readBody(req), viewer)); }
       if (sub === 'join-codes') { only('GET'); return send(res, 200, { codes: listJoinCodes() }); }
       if (sub === 'join-code/revoke') { only('POST'); return send(res, 200, revokeCode(await readBody(req), viewer)); }
       if (sub === 'mcp') { only('GET'); return send(res, 200, mcp()); }
       if (sub === 'mcp/tool') { only('POST'); return send(res, 200, setTool(await readBody(req), viewer)); }
-      if (sub === 'jobs') { only('GET'); return send(res, 200, await jobs()); }
+      if (sub === 'jobs') { only('GET'); return send(res, 200, await jobs(scope)); }
       if (sub === 'topology') { only('GET'); return send(res, 200, await topology(viewer, req)); }
-      if (sub === 'topology/events') { only('GET'); return send(res, 200, events(q)); }
+      if (sub === 'topology/events') { only('GET'); return send(res, 200, events(q, scope)); }
       if (sub === 'settings') {
         if (method === 'GET') return send(res, 200, settingsView());
         only('POST');
         return send(res, 200, setSettings(await readBody(req), viewer));
       }
-      if (sub === 'conv/search') { only('GET'); return send(res, 200, convSearch(q)); }
-      if ((m = /^conv\/([A-Za-z0-9._:-]{1,200})$/.exec(sub))) { only('GET'); return send(res, 200, convGet(m[1], q)); }
+      if (sub === 'conv/search') { only('GET'); return send(res, 200, convSearch(q, scope)); }
+      if ((m = /^conv\/([A-Za-z0-9._:-]{1,200})$/.exec(sub))) { only('GET'); return send(res, 200, convGet(m[1], q, scope)); }
       for (const ext of exts) { if (await ext.handle(req, res, url, sub, viewer)) return; }
       throw new HttpError(404, '没有这个接口');
     } catch (e) {

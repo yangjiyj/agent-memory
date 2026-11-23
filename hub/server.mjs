@@ -29,6 +29,7 @@ import { createConvLog } from './convlog.mjs';
 import { createVault } from './vault.mjs';
 import { createExtras } from './extras.mjs';
 import { createAdmin } from './admin.mjs';
+import { createShare } from './share.mjs';
 
 const run = promisify(execFile);
 const VERSION = '0.9.3';
@@ -369,8 +370,8 @@ function browseViewer(req) {
     && (peer.keys || [peer.key]).some((k) => peers[d].peer === k || (peers[d].aliases || []).includes(k))) || null;
 }
 
-function browseData() {
-  const entries = [...store.values()].sort(byUpdated).map((e) => ({
+function browseData(scope) {
+  const entries = [...store.values()].filter((e) => scope.entry(e)).sort(byUpdated).map((e) => ({
     id: e.meta.id, type: e.meta.type, title: e.meta.title, subject: e.meta.subject || '', project: e.meta.project || '',
     tags: e.meta.tags || [], author: e.meta.author, client: e.meta.client, origin: e.meta.origin, state: e.meta.state,
     updated: e.meta.updated, snippet: String(e.body || '').slice(0, 400),
@@ -418,6 +419,23 @@ function devicePolicy(device) {
 }
 const hiddenFor = (who) => devicePolicy(who.device).hide;
 const visible = (who, project) => { const h = hiddenFor(who); return !h.length || !h.includes(String(project || '').toLowerCase()); };
+
+// 浏览者的可见范围：控制台（/console/api/*）、/browse/*、分享链接和各扩展接口过滤隐藏项目，都从这一个函数取口径。
+// 口径同 MCP 工具里的 visible()：项目名按小写比，没有项目的内容可见；visibleTo(viewer, project) 就是它的 project()。
+//   on        这台设备设了 hide_projects（没设时所有过滤都是空操作，返回和以前一模一样）
+//   hide      被隐藏的项目名（小写）；hideKey 是缓存用的稳定串
+//   project(p)  项目名可见吗      entry(e)  记忆条目可见吗      session(key)  对话会话可见吗（归属口径见 convlog.mjs 的 hiddenKeys）
+function scopeOf(viewer) {
+  const hide = hiddenFor({ device: viewer });
+  const set = new Set(hide);
+  const scope = {
+    viewer, on: set.size > 0, hide, hideKey: [...set].sort().join('\n'),
+    project: (p) => !set.size || !set.has(String(p || '').toLowerCase()),
+    entry: (e) => scope.project(e.meta.project),
+    session: (key) => conv.keyOk(scope, key),
+  };
+  return scope;
+}
 
 // 非设备令牌（报表、抽取机、历史导入）不发心跳，也不记工具调用：这里单记"最近一次请求"，拓扑页靠它判断它们在不在用。
 // 内存里每次都更新；落盘（state/last-request.json）首次立即写，之后同一令牌最多 60 秒一次，退出时再补写一次。
@@ -1140,10 +1158,10 @@ function report(hours = 24) {
 }
 
 // 大屏"智能体状态"和"记忆全景"：每台机器每个智能体怎么接的、记了多少、存了多少对话、最近 7 天查了几次共享记忆
-function agentsOverview() {
+function agentsOverview(scope) {
   const hb = readJSON(heartbeatFile(), {});
   const { devices } = loadTokens();
-  const all = [...store.values()];
+  const all = [...store.values()].filter((e) => !scope?.on || scope.entry(e));
   const active = all.filter((e) => e.meta.state === 'active');
   const since7 = Date.now() - 7 * 86400e3;
   const usage = readJsonl(usageFile(), since7).filter((u) => u.op.startsWith('tool:') || u.op.startsWith('cli:'));
@@ -1151,7 +1169,8 @@ function agentsOverview() {
   const cells = {};
   const cell = (d, t) => ((cells[d] ||= {})[t] ||= { memories: 0, sessions: 0, lastMsg: null, calls: 0, lastCall: null, writes: 0 });
   for (const e of active) if (e.meta.origin === 'native' || e.meta.origin === 'explicit') cell(e.meta.author, e.meta.client).memories++;
-  for (const e of Object.values(idx)) {
+  for (const [key, e] of Object.entries(idx)) {
+    if (scope?.on && !scope.session(key)) continue;
     const c = cell(e.device, e.tool);
     c.sessions++;
     if (e.last && (!c.lastMsg || e.last > c.lastMsg)) c.lastMsg = e.last;
@@ -1518,6 +1537,8 @@ function readBody(req, max = 8 << 20) {
 async function route(req, res, url) {
   const p = url.pathname;
   if (p === '/health') return send(res, 200, { ok: true, version: VERSION, agent_version: agentVersion(), entries: store.size });
+  // 只读分享链接：在身份校验之前，没有身份的请求也能打开（链接本身就是凭证，见 share.mjs）
+  if (p.startsWith('/s/')) return share.handle(req, res, url);
   const rv = /^\/review\/([0-9a-f]{32})(\/decide)?\/?$/.exec(p);
   if (rv) {
     // 审批页：链接本身就是凭证（只发在日报里），每周换一次
@@ -1591,56 +1612,62 @@ async function route(req, res, url) {
   if (p === '/browse' || p.startsWith('/browse/')) {
     const viewer = browseViewer(req);
     if (!viewer) return forbiddenPage(res);
-    if (p === '/browse/data') return send(res, 200, browseData());
+    // 浏览者设了 hide_projects 时，下面每个接口都按 scope 过滤：被隐藏项目的内容、名字、条目 id、会话 ref 都不给（没设的设备完全不变）
+    const scope = scopeOf(viewer);
+    if (p === '/browse/data') return send(res, 200, browseData(scope));
     if (p === '/browse/viz-data') {
-      const active = [...store.values()].filter((e) => e.meta.state === 'active');
+      const active = [...store.values()].filter((e) => e.meta.state === 'active' && scope.entry(e));
       const byType = {};
       for (const e of active) byType[e.meta.type] = (byType[e.meta.type] || 0) + 1;
-      return send(res, 200, { ...conv.vizData(), memories: { total: active.length, byType }, device_labels: CFG.device_labels || {} });
+      return send(res, 200, { ...conv.vizData(scope), memories: { total: active.length, byType }, device_labels: CFG.device_labels || {} });
     }
-    if (p === '/browse/viz-day') return send(res, 200, conv.vizDay(url.searchParams.get('date') || ''));
-    if (p === '/browse/viz-extra') return send(res, 200, conv.vizExtra());
-    if (p === '/browse/viz-galaxy') return send(res, 200, conv.vizGalaxy());
-    if (p === '/browse/viz-agents') return send(res, 200, agentsOverview());
-    if (p === '/browse/projects') return send(res, 200, extras.projects());
-    if (p === '/browse/handoff') return send(res, 200, extras.handoff(Object.fromEntries(url.searchParams)), 'text/plain; charset=utf-8');
-    if (p === '/browse/todos') return send(res, 200, extras.todos(Object.fromEntries(url.searchParams)));
-    if (p === '/browse/todo' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await extras.markTodo(b.ref, b.action, viewer)); }
-    if (p === '/browse/graph') return send(res, 200, extras.graph());
-    if (p === '/browse/entity') return send(res, 200, extras.entity(url.searchParams.get('name') || ''), 'text/plain; charset=utf-8');
-    if (p === '/browse/audit') return send(res, 200, { ...extras.audit(Object.fromEntries(url.searchParams)), policies: Object.fromEntries(Object.keys(loadTokens().devices || {}).map((k) => [k, devicePolicy(k)])) });
+    if (p === '/browse/viz-day') return send(res, 200, conv.vizDay(url.searchParams.get('date') || '', scope));
+    if (p === '/browse/viz-extra') return send(res, 200, conv.vizExtra(scope));
+    if (p === '/browse/viz-galaxy') return send(res, 200, conv.vizGalaxy(scope));
+    if (p === '/browse/viz-agents') return send(res, 200, agentsOverview(scope));
+    if (p === '/browse/projects') return send(res, 200, extras.projects(scope));
+    if (p === '/browse/handoff') return send(res, 200, extras.handoff(Object.fromEntries(url.searchParams), scope), 'text/plain; charset=utf-8');
+    if (p === '/browse/todos') return send(res, 200, extras.todos(Object.fromEntries(url.searchParams), scope));
+    if (p === '/browse/todo' && req.method === 'POST') { const b = await readBody(req); return send(res, 200, await extras.markTodo(b.ref, b.action, viewer, scope)); }
+    if (p === '/browse/graph') return send(res, 200, extras.graph(scope));
+    if (p === '/browse/entity') return send(res, 200, extras.entity(url.searchParams.get('name') || '', scope), 'text/plain; charset=utf-8');
+    if (p === '/browse/audit') {
+      // 各设备的策略里，限制可见范围的浏览者只看到自己也看得到的项目名
+      const policies = Object.fromEntries(Object.keys(loadTokens().devices || {}).map((k) => { const pol = devicePolicy(k); return [k, scope.on ? { ...pol, hide: pol.hide.filter((x) => scope.project(x)) } : pol]; }));
+      return send(res, 200, { ...extras.audit(Object.fromEntries(url.searchParams), scope), policies });
+    }
     if (p === '/browse/semantic') {
       const qq = url.searchParams.get('q') || '';
-      const rs = qq ? await extras.semantic(qq, { limit: 20 }) : [];
+      const rs = qq ? await extras.semantic(qq, { limit: 20, scope }) : [];
       return send(res, 200, { status: extras.semanticStatus(), results: rs || [] });
     }
-    if (p === '/browse/manage-counts') return send(res, 200, extras.manageCounts());
-    if (p === '/browse/manage-data') return send(res, 200, extras.manageData());
+    if (p === '/browse/manage-counts') return send(res, 200, extras.manageCounts(scope));
+    if (p === '/browse/manage-data') return send(res, 200, extras.manageData(scope));
     if (p === '/browse/manage-action' && req.method === 'POST') {
       const b = await readBody(req);
       logUsage({ device: viewer, client: 'browser' }, `manage:${b.action}`, (Array.isArray(b.ids) ? b.ids : [b.id]).join(','));
-      return send(res, 200, await extras.manageAction(b, viewer, { updateEntry, decide: (ids, action, by) => pipe.decide(ids, action, by) }));
+      return send(res, 200, await extras.manageAction(b, viewer, { updateEntry, decide: (ids, action, by) => pipe.decide(ids, action, by) }, scope));
     }
     if (p === '/browse/viz-live') {
       const hb = readJSON(heartbeatFile(), {});
       const { devices } = loadTokens();
       const sync = Object.fromEntries(Object.entries(devices || {}).filter(([, v]) => (v.role || 'device') === 'device').map(([k]) => [k, { last_seen: hb[k]?.last_seen || null, version: hb[k]?.agent_version || '' }]));
-      return send(res, 200, { ...conv.vizLive(), sync, memories: [...store.values()].filter((e) => e.meta.state === 'active').length });
+      return send(res, 200, { ...conv.vizLive(scope), sync, memories: [...store.values()].filter((e) => e.meta.state === 'active' && scope.entry(e)).length });
     }
-    if (p === '/browse/viz-search') return send(res, 200, conv.searchDays(url.searchParams.get('q') || ''));
+    if (p === '/browse/viz-search') return send(res, 200, conv.searchDays(url.searchParams.get('q') || '', scope));
     // 年度工作报告（翻页卡片）
     if (p === '/browse/wrapped') {
       logUsage({ device: viewer, client: 'browser' }, 'wrapped');
       return send(res, 200, fs.readFileSync(path.join(APP_DIR, 'wrapped.html'), 'utf8'), 'text/html; charset=utf-8');
     }
     if (p === '/browse/wrapped-data') {
-      const active = [...store.values()].filter((e) => e.meta.state === 'active');
-      return send(res, 200, { ...conv.wrapped(), device_labels: CFG.device_labels || {}, memories: { total: active.length, bySource: Object.entries(active.reduce((m, e) => { m[e.meta.client] = (m[e.meta.client] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]) } });
+      const active = [...store.values()].filter((e) => e.meta.state === 'active' && scope.entry(e));
+      return send(res, 200, { ...conv.wrapped(scope), device_labels: CFG.device_labels || {}, memories: { total: active.length, bySource: Object.entries(active.reduce((m, e) => { m[e.meta.client] = (m[e.meta.client] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]) } });
     }
     const be = /^\/browse\/entry\/([A-Za-z0-9-]+)$/.exec(p);
     if (be) {
       const e = store.get(be[1]);
-      return e ? send(res, 200, renderEntry(e), 'text/plain; charset=utf-8') : send(res, 404, '没有这条', 'text/plain; charset=utf-8');
+      return e && scope.entry(e) ? send(res, 200, renderEntry(e), 'text/plain; charset=utf-8') : send(res, 404, '没有这条', 'text/plain; charset=utf-8');
     }
     return send(res, 404, { error: 'not found' });
   }
@@ -1763,6 +1790,7 @@ let conv = null;
 let vault2 = null;
 let extras = null;
 let admin = null;
+let share = null;
 
 // 设备端每次同步会比对这个版本号，不一样就自动下载新版替换自己
 function agentVersion() {
@@ -1781,6 +1809,7 @@ async function main() {
   conv = createConvLog({ CFG, nowIso, redactSecrets, findSecret, UserError, readJSON, commit, serial });
   vault2 = createVault({ CFG, store, conv, TYPE_LABEL, fmtLocal, byUpdated, ageDays });
   extras = createExtras({ CFG, store, conv, nowIso, readJSON, appendJsonl, serial, writeEntry, commit, byUpdated, ageDays, TYPE_LABEL, UserError, readJsonl, usageFile, findSecret, redactSecrets });
+  share = createShare({ CFG, readJSON, conv, extras, scopeOf });
   admin = createAdmin({
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
     heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode, VERSION, agentVersion, redactSecrets, usageTail,
@@ -1788,7 +1817,7 @@ async function main() {
     tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
     listJoinCodes, revokeJoinCode,
     // 浏览者（设备名）按 hide_projects 能不能看某个项目；口径同 MCP 工具里的 visible()
-    visibleTo: (viewer, project) => visible({ device: viewer }, project), hiddenOf: (viewer) => hiddenFor({ device: viewer }),
+    visibleTo: (viewer, project) => scopeOf(viewer).project(project), hiddenOf: (viewer) => hiddenFor({ device: viewer }),
     // 各功能需要的 server 内部函数在自己的占位行上加；占位行之间隔着空行，合并时互不冲突
     // [B] 参数位
     //
@@ -1798,7 +1827,7 @@ async function main() {
     //
     // [E] 参数位
     //
-    // [F] 参数位
+    share, scopeOf, // [F] 参数位
   });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
   setTimeout(vecTick, 30e3);
@@ -1816,7 +1845,7 @@ async function main() {
       if (e instanceof UserError) send(res, 400, { error: e.message });
       else { console.error(e); send(res, 500, { error: 'internal error' }); }
     } finally {
-      if (url.pathname !== '/health') console.log(`${req.method} ${url.pathname} ${res.statusCode} ${Date.now() - started}ms`);
+      if (url.pathname !== '/health') console.log(`${req.method} ${url.pathname.startsWith('/s/') ? '/s/…' : url.pathname} ${res.statusCode} ${Date.now() - started}ms`); // 分享链接的令牌不进日志
     }
   });
   server.listen(CFG.port, CFG.listen, () => {

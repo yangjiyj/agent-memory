@@ -497,6 +497,9 @@
       try { ps = await Console.api('/browse/projects'); } catch (e) { Console.toast(e.message, 'err'); }
       $('hoProj').innerHTML = `<option value="">（按关键词）</option>${ps.slice(0, 40).map((x) => `<option value="${esc(x.p)}">${esc(x.p)}（${x.n}）</option>`).join('')}`;
       if (ps[0]) $('hoProj').value = ps[0].p;
+      $('hoShare').onclick = () => Console.share?.open($('hoProj').value);
+      const syncShare = () => { $('hoShare').disabled = !$('hoProj').value; };
+      $('hoProj').addEventListener('change', syncShare); syncShare();
       $('hoForm').onsubmit = async (e) => {
         e.preventDefault();
         $('hoOut').value = '生成中…';
@@ -533,7 +536,7 @@
           </section>
           <section class="panel">
             <div class="ph"><h2>交接包</h2></div>
-            <form class="ho" id="hoForm"><select id="hoProj"></select><select id="hoDays"><option value="7">最近 7 天</option><option value="14" selected>最近 14 天</option><option value="30">最近 30 天</option><option value="60">最近 60 天</option></select><input class="inp" id="hoQ" placeholder="可选：再加个关键词"><button>生成</button><button type="button" id="hoCopy">复制</button></form>
+            <form class="ho" id="hoForm"><select id="hoProj"></select><select id="hoDays"><option value="7">最近 7 天</option><option value="14" selected>最近 14 天</option><option value="30">最近 30 天</option><option value="60">最近 60 天</option></select><input class="inp" id="hoQ" placeholder="可选：再加个关键词"><button>生成</button><button type="button" id="hoCopy">复制</button><button type="button" id="hoShare">分享</button></form>
             <textarea class="inp" id="hoOut" readonly placeholder="生成后在这里，点「复制」贴给新会话或新智能体"></textarea>
           </section>`;
         initHandoff();
