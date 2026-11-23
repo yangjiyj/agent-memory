@@ -113,8 +113,7 @@ describe('响应压缩', () => {
     }
     // 小于 1KB 的静态文件不压：临时放一个小文件（各页面脚本现在都超过 1KB）
     const tinyPath = path.join(HUB_DIR, 'console-zz-tiny-test.js');
-    fs.writeFileSync(tinyPath, '// tiny
-');
+    fs.writeFileSync(tinyPath, '// tiny');
     try {
       const tiny = await raw(hub.port, '/console/console-zz-tiny-test.js', { 'accept-encoding': 'br' });
       assert.equal(tiny.status, 200);

@@ -357,6 +357,6 @@ describe('摘要页：按浏览者的 hide_projects 过滤', () => {
     assert.ok(!d.text.includes('secret-proj'));
     assert.ok(d.text.includes('公开项目的决定') && d.text.includes('open-proj-摘要'));
     assert.equal((await hub.post('digest/rule', { id: secretId, action: 'pin' })).status, 404);
-    assert.equal((await hub.post('devices/my-laptop', { hide_projects: [] })).status, 200);
+    hub.clearHide();
   });
 });

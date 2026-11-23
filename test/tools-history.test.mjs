@@ -242,7 +242,7 @@ describe('修改历史：按浏览者的 hide_projects 过滤', () => {
   });
 
   it('条目现在可见，但某个旧版本属于被隐藏的项目：那一版不给差异、不给恢复', async () => {
-    assert.equal((await hub.post('devices/my-laptop', { hide_projects: [] })).status, 200);
+    hub.clearHide();
     const id = await remember(hub, { type: 'fact', title: 'moved one', body: 'a', project: 'secret-proj' });
     await call(hub, 'build-server', 'memory_update', { id, project: 'open-proj', body: 'b' });
     await call(hub, 'build-server', 'memory_update', { id, body: 'c' });

@@ -158,7 +158,7 @@ describe('对话存成记忆', () => {
     assert.match(r.json.error, /没有这个会话/);
     assert.equal((await hub.get(`memory/conv-hint?ref=${secret.ref}&date=${secret.date}`)).status, 404);
     assert.equal((await post({})).status, 200, '可见的会话照常');
-    assert.equal((await hub.post('devices/my-laptop', { hide_projects: [] })).status, 200);
+    hub.clearHide();
   });
 });
 

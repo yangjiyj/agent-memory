@@ -104,6 +104,12 @@ export async function startHub(opts = {}) {
       return { status: res.status, json: await res.json().catch(() => null) };
     },
     read: (name) => JSON.parse(fs.readFileSync(p(name), 'utf8')),
+    // 受限的浏览者（设了 hide_projects）不能自己改隐藏列表，测试里直接改令牌文件把某台设备的隐藏列表清掉
+    clearHide(device = 'my-laptop') {
+      const t = JSON.parse(fs.readFileSync(p('tokens.json'), 'utf8'));
+      delete t.devices[device].hide_projects;
+      fs.writeFileSync(p('tokens.json'), JSON.stringify(t));
+    },
     async restart() { await halt(); await launch(); },
     async stop() {
       await halt();
