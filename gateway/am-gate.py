@@ -20,7 +20,7 @@ import threading
 import time
 
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "3190"))
-UPSTREAM_HOST, UPSTREAM_PORT = os.environ.get("UPSTREAM", "192.168.122.50:8790").split(":")
+UPSTREAM_HOST, UPSTREAM_PORT = os.environ.get("UPSTREAM", "192.168.122.10:8790").split(":")
 SECRET = os.environ["GATE_SECRET"]
 TAILNET = ipaddress.ip_network("100.64.0.0/10")
 VM_NETS = [ipaddress.ip_network(n.strip()) for n in os.environ.get("VM_NETS", "192.168.122.0/24").split(",") if n.strip()]

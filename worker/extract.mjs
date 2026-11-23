@@ -3,7 +3,7 @@
  * 从中心取待处理会话 → 用 codex exec 抽候选记忆 → 交回中心（进审批页）。
  *
  * 配置 ~/.config/agent-memory/extractor.json：
- *   { "hub": "http://192.168.122.50:8790", "token": "…(extractor 角色)", "codex": "codex",
+ *   { "hub": "http://192.168.122.10:8790", "token": "…(extractor 角色)", "codex": "codex",
  *     "credential_file": "~/.config/agent-memory/llm.env", "max_sessions": 40, "timeout_sec": 900,
  *     "reasoning_effort": "medium" }
  */
