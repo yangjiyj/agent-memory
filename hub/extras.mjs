@@ -204,9 +204,10 @@ export function createExtras(ctx) {
 
   // ---------------------------------------------------------------- 记忆管理
   let dupCache = null;
-  function manageData() {
+  // 待整理的三份名单（疑似重复、过期现状、待审候选）；manageData 和 manageCounts 共用这一段，口径只有一处
+  function manageState() {
     const all = [...store.values()].filter((e) => e.meta.state === 'active' || e.meta.state === 'proposed');
-    const sig = all.map((e) => `${e.meta.id}:${e.meta.updated}:${e.meta.state}`).join('|').length + ':' + all.length;
+    const sig = crypto.createHash('sha1').update(all.map((e) => `${e.meta.id}:${e.meta.type}:${e.meta.updated}:${e.meta.state}:${e.meta.title}`).join('|')).digest('hex');
     if (!dupCache || dupCache.sig !== sig) {
       const g = all.map((e) => ({ e, g: grams(e.meta.title) }));
       const groups = [];
@@ -223,14 +224,23 @@ export function createExtras(ctx) {
       }
       dupCache = { sig, groups };
     }
-    const row = (e) => ({ id: e.meta.id, type: e.meta.type, state: e.meta.state, title: e.meta.title, project: e.meta.project || '', subject: e.meta.subject || '',
-      origin: e.meta.origin, source: `${e.meta.author}/${e.meta.client}`, updated: e.meta.updated, created: e.meta.created, body: short(e.body, 600), tags: e.meta.tags || [] });
     return {
-      entries: all.sort(byUpdated).map(row),
+      all,
       duplicates: dupCache.groups,
       stale: all.filter((e) => e.meta.state === 'active' && e.meta.type === 'status' && ageDays(e.meta.updated) > 30).map((e) => e.meta.id),
       proposed: all.filter((e) => e.meta.state === 'proposed').map((e) => e.meta.id),
     };
+  }
+  // 只要数字：概览页和侧栏徽标用，不带条目正文。重复分组有按内容签名的缓存，没有改动时只是过一遍名单
+  function manageCounts() {
+    const m = manageState();
+    return { proposed: m.proposed.length, duplicates: m.duplicates.length, stale: m.stale.length, total: m.proposed.length + m.duplicates.length + m.stale.length };
+  }
+  function manageData() {
+    const { all, duplicates, stale, proposed } = manageState();
+    const row = (e) => ({ id: e.meta.id, type: e.meta.type, state: e.meta.state, title: e.meta.title, project: e.meta.project || '', subject: e.meta.subject || '',
+      origin: e.meta.origin, source: `${e.meta.author}/${e.meta.client}`, updated: e.meta.updated, created: e.meta.created, body: short(e.body, 600), tags: e.meta.tags || [] });
+    return { entries: all.sort(byUpdated).map(row), duplicates, stale, proposed };
   }
   async function manageAction(b, viewer, api) {
     const who = { device: viewer, client: 'browser' };
@@ -268,13 +278,13 @@ export function createExtras(ctx) {
   // ---------------------------------------------------------------- 审计
   function audit({ days = 7 } = {}) {
     const since = Date.now() - Math.min(Math.max(parseInt(days, 10) || 7, 1), 90) * 86400e3;
-    const ev = readJsonl(usageFile(), since).filter((u) => u.op.startsWith('tool:') || u.op.startsWith('cli:') || u.op === 'browse' || u.op === 'viz' || u.op === 'wrapped');
+    const ev = readJsonl(usageFile(), since).filter((u) => u.op.startsWith('tool:') || u.op.startsWith('cli:') || u.op.startsWith('console:') || u.op.startsWith('manage:') || ['browse', 'viz', 'wrapped', 'console', 'wall'].includes(u.op));
     const by = {};
     const ops = {};
     for (const u of ev) {
       const k = `${u.device}/${u.client}`;
       (by[k] ||= { calls: 0, writes: 0, last: null }).calls++;
-      if (/remember|update|retire/.test(u.op)) by[k].writes++;
+      if (/remember|update|retire/.test(u.op) || u.op.startsWith('console:') || u.op.startsWith('manage:')) by[k].writes++;
       if (!by[k].last || u.t > by[k].last) by[k].last = u.t;
       const op = u.op.replace(/^(tool|cli):/, '');
       ops[op] = (ops[op] || 0) + 1;
@@ -291,7 +301,7 @@ export function createExtras(ctx) {
   };
   let graphCache = null;
   function graph() {
-    const sig = `${store.size}:${[...store.values()].reduce((a, e) => a + (Date.parse(e.meta.updated) || 0), 0)}:${conv.journal().size}`;
+    const sig = `${JSON.stringify(CFG.graph_entities || 0)}:${store.size}:${[...store.values()].reduce((a, e) => a + (Date.parse(e.meta.updated) || 0), 0)}:${conv.journal().size}`;
     if (graphCache?.sig === sig) return graphCache.data;
     const ents = CFG.graph_entities || DEFAULT_ENTITIES;
     const projs = projects().filter((x) => x.n >= 3).map((x) => x.p);
@@ -376,9 +386,8 @@ export function createExtras(ctx) {
   const vecFile = path.join(CFG.state, 'vectors.json');
   let vec = readJSON(vecFile, { model: '', items: {} }); // key -> { h, v: base64(float32) }
   let vecBusy = false;
-  const embedUrl = CFG.embed_url || '';
   async function embed(texts) {
-    const res = await fetch(`${embedUrl}/embed`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texts }), signal: AbortSignal.timeout(120000) });
+    const res = await fetch(`${CFG.embed_url || ''}/embed`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texts }), signal: AbortSignal.timeout(120000) });
     if (!res.ok) throw new Error(`向量服务 ${res.status}`);
     const j = await res.json();
     vec.model = j.model || vec.model;
@@ -393,7 +402,7 @@ export function createExtras(ctx) {
     return out;
   }
   async function reindex() {
-    if (!embedUrl || vecBusy) return { skipped: true };
+    if (!CFG.embed_url || vecBusy) return { skipped: true };
     vecBusy = true;
     try {
       const docs = docsForIndex();
@@ -417,7 +426,7 @@ export function createExtras(ctx) {
     return cacheVec;
   }
   async function semantic(query, { limit = 10, kind = '' } = {}) {
-    if (!embedUrl) return null;
+    if (!CFG.embed_url) return null;
     let qv;
     try { qv = (await embed([String(query)]))[0]; } catch { return null; }
     const q = new Float32Array(qv);
@@ -447,7 +456,7 @@ export function createExtras(ctx) {
     if (!rs.length) return `按意思没找到和「${query}」相关的。`;
     return [`按意思找到（越靠前越相关）：`, ...rs.map((r, i) => `${i + 1}. ${r.kind === 'memory' ? `[${TYPE_LABEL[r.type] || r.type}]` : '[日志]'}${r.project ? ` [${r.project}]` : ''} ${r.title}（${r.date} · ${r.source} · ${r.kind === 'memory' ? `id=${r.id}` : `ref:${r.ref}`}）`)].join('\n');
   }
-  function semanticStatus() { return { enabled: Boolean(embedUrl), model: vec.model, items: Object.keys(vec.items).length, busy: vecBusy }; }
+  function semanticStatus() { return { enabled: Boolean(CFG.embed_url), model: vec.model, items: Object.keys(vec.items).length, busy: vecBusy }; }
 
-  return { projects, todos, markTodo, renderTodos, handoff, weekly, manageData, manageAction, audit, graph, entity, reindex, semantic, renderSemantic, semanticStatus };
+  return { projects, todos, markTodo, renderTodos, handoff, weekly, manageData, manageCounts, manageAction, audit, graph, entity, reindex, semantic, renderSemantic, semanticStatus };
 }

@@ -338,8 +338,23 @@ export function createPipeline(ctx) {
     return out;
   }
 
+  // 会话抽取的整体情况（控制台任务页用）
+  function stats() {
+    const vals = Object.values(index);
+    const latest = (key) => vals.map((v) => v[key]).filter(Boolean).sort().pop() || null;
+    return {
+      total: vals.length,
+      pending: vals.filter((v) => v.status === 'pending').length,
+      error: vals.filter((v) => v.status === 'error').length,
+      done: vals.filter((v) => v.status === 'done').length,
+      candidates: vals.reduce((a, v) => a + (v.candidates || 0), 0),
+      last_uploaded: latest('uploaded'),
+      last_processed: latest('processed'),
+    };
+  }
+
   return {
-    fixCandidateDates, watchProblems,
+    stats, fixCandidateDates, watchProblems,
     uploadSession, pendingSessions, sessionItem, sessionResult, titles,
     reviewKeyOk, reviewPage, reviewUrl, decide, autoApprove, proposals, vault, reportLines,
   };

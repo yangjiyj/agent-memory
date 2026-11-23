@@ -377,10 +377,11 @@ export function createConvLog(ctx) {
 
   // ---------------------------------------------------- search / read ----
 
-  function search(args = {}) {
-    if (!mounted()) return '对话存档盘没挂上，暂时搜不了。';
+  // 搜原文：返回结构化结果（控制台接口用）；search() 把它排成给模型看的文本
+  function searchData(args = {}) {
+    if (!mounted()) return { error: '对话存档盘没挂上，暂时搜不了。' };
     const words = String(args.query || '').toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return '请给关键词（空格分隔，全部命中）。';
+    if (!words.length) return { error: '请给关键词（空格分隔，全部命中）。' };
     const limit = Math.min(Math.max(parseInt(args.limit, 10) || 10, 1), 30);
     const from = parseDate(args.from, '0000-00-00');
     const to = parseDate(args.to, '9999-99-99');
@@ -408,20 +409,36 @@ export function createConvLog(ctx) {
       });
       if (found.length) hits.push({ key, e, found, last: found[found.length - 1].ts });
     }
-    if (!hits.length) return `原始对话里没搜到「${words.join(' ')}」。`;
     hits.sort((a, b) => String(b.last).localeCompare(String(a.last)));
-    const lines = [`在 ${hits.length} 个会话里搜到「${words.join(' ')}」${hits.length > limit ? `，列出最近的 ${limit} 个` : ''}（用 conversation_get 加 ref 和日期读上下文）：`];
-    hits.slice(0, limit).forEach((h, n) => {
-      lines.push(`${n + 1}. ${h.e.device}/${TOOL_LABEL[h.e.tool] || h.e.tool}「${short(h.e.title, 50)}」ref:${refOf(h.key)}`);
-      for (const f of h.found) lines.push(`   - ${localDay(f.ts)} ${localTime(f.ts)} 第 ${f.i} 条（${f.role === 'user' ? '用户' : '助手'}）：${f.snip}`);
+    return {
+      words, limit, total: hits.length,
+      hits: hits.slice(0, limit).map((h) => ({
+        ref: refOf(h.key), device: h.e.device, tool: h.e.tool, tool_label: TOOL_LABEL[h.e.tool] || h.e.tool, title: short(h.e.title, 50), last: h.last,
+        found: h.found.map((f) => ({ index: f.i, ts: f.ts, day: localDay(f.ts), time: localTime(f.ts), role: f.role, snippet: f.snip })),
+      })),
+    };
+  }
+
+  function search(args = {}) {
+    const r = searchData(args);
+    if (r.error) return r.error;
+    if (!r.total) return `原始对话里没搜到「${r.words.join(' ')}」。`;
+    const lines = [`在 ${r.total} 个会话里搜到「${r.words.join(' ')}」${r.total > r.limit ? `，列出最近的 ${r.limit} 个` : ''}（用 conversation_get 加 ref 和日期读上下文）：`];
+    r.hits.forEach((h, n) => {
+      lines.push(`${n + 1}. ${h.device}/${h.tool_label}「${h.title}」ref:${h.ref}`);
+      for (const f of h.found) lines.push(`   - ${f.day} ${f.time} 第 ${f.index} 条（${f.role === 'user' ? '用户' : '助手'}）：${f.snippet}`);
     });
     return lines.join('\n');
   }
 
-  function get(args = {}) {
-    if (!mounted()) return '对话存档盘没挂上，暂时读不了。';
+  const blockOf = (m, body) => `[${m.index ?? m.i} ${m.role === 'user' ? '用户' : '助手'} ${localDay(m.ts).slice(5)} ${localTime(m.ts)}]\n${body}\n`;
+  const CUT = '…（截断，加 full=true 看全文）';
+
+  // 读一个会话：返回结构化结果（控制台接口用）；get() 把它排成给模型看的文本
+  function getData(args = {}) {
+    if (!mounted()) return { error: '对话存档盘没挂上，暂时读不了。' };
     const key = resolve(args.ref || args.key);
-    if (!key) return `没有这个会话：${args.ref || args.key || '（没给 ref）'}。ref 来自 memory_timeline 或 conversation_search 的结果。`;
+    if (!key) return { error: `没有这个会话：${args.ref || args.key || '（没给 ref）'}。ref 来自 memory_timeline 或 conversation_search 的结果。` };
     const e = index[key];
     let msgs = readMessages(e).map((m, i) => ({ ...m, i: i + 1 }));
     const date = parseDate(args.date, '');
@@ -429,27 +446,45 @@ export function createConvLog(ctx) {
     if (args.role === 'user' || args.role === 'assistant') msgs = msgs.filter((m) => m.role === args.role);
     const start = Math.max(parseInt(args.from, 10) || (msgs[0]?.i || 1), 1);
     const full = Boolean(args.full);
-    const head = [
-      `会话「${e.title || e.sid}」 ${e.device}/${TOOL_LABEL[e.tool] || e.tool} ref:${refOf(key)}`,
-      `时间 ${e.first ? `${localDay(e.first)} ${localTime(e.first)}` : '?'} → ${e.last ? `${localDay(e.last)} ${localTime(e.last)}` : '?'}，共 ${e.n} 条${e.cwd ? `，目录 ${e.cwd}` : ''}${e.legacy ? '（来自旧知识库导出）' : ''}`,
-      `按天：${Object.entries(e.days).sort().map(([d, x]) => `${d.slice(5)} ${x.n} 条`).join('、')}`,
-    ];
-    const js = Object.keys(e.days).sort().map((d) => journal.get(d)?.[key]).filter(Boolean);
-    if (js.length) head.push('日志：', ...js.slice(-5).map((j) => `- ${j.date} ${j.summary}`));
-    head.push('');
-    const out = [...head];
-    let size = out.join('\n').length;
+    const session = {
+      ref: refOf(key), title: e.title || e.sid, device: e.device, tool: e.tool, tool_label: TOOL_LABEL[e.tool] || e.tool,
+      first: e.first || null, last: e.last || null, n: e.n, cwd: e.cwd || '', legacy: Boolean(e.legacy),
+      days: Object.entries(e.days).sort().map(([d, x]) => ({ date: d, n: x.n })),
+      journal: Object.keys(e.days).sort().map((d) => journal.get(d)?.[key]).filter(Boolean).slice(-5).map((j) => ({ date: j.date, summary: j.summary })),
+    };
+    let size = headLines(session).join('\n').length;
+    const out = [];
     let next = null;
     for (const m of msgs.filter((x) => x.i >= start)) {
       const max = full ? 20000 : (m.role === 'user' ? 4000 : 2500);
-      const body = m.text.length > max ? `${m.text.slice(0, max)}…（截断，加 full=true 看全文）` : m.text;
-      const block = `[${m.i} ${m.role === 'user' ? '用户' : '助手'} ${localDay(m.ts).slice(5)} ${localTime(m.ts)}]\n${body}\n`;
-      if (size + block.length > 24000 && out.length > head.length) { next = m.i; break; }
-      out.push(block);
-      size += block.length;
+      const truncated = m.text.length > max;
+      const body = truncated ? m.text.slice(0, max) : m.text;
+      const len = blockOf(m, truncated ? body + CUT : body).length;
+      if (size + len > 24000 && out.length) { next = m.i; break; }
+      out.push({ index: m.i, role: m.role, ts: m.ts, day: localDay(m.ts), time: localTime(m.ts), text: body, truncated });
+      size += len;
     }
-    if (next) out.push(`…后面还有，接着读用 from=${next}${date ? ` date=${date}` : ''}`);
-    if (msgs.length === 0) out.push(date ? `${date} 这天这个会话没有消息。` : '（没有消息）');
+    return { session, date: date || '', messages: out, next, empty: msgs.length === 0 };
+  }
+
+  function headLines(s) {
+    const lines = [
+      `会话「${s.title}」 ${s.device}/${s.tool_label} ref:${s.ref}`,
+      `时间 ${s.first ? `${localDay(s.first)} ${localTime(s.first)}` : '?'} → ${s.last ? `${localDay(s.last)} ${localTime(s.last)}` : '?'}，共 ${s.n} 条${s.cwd ? `，目录 ${s.cwd}` : ''}${s.legacy ? '（来自旧知识库导出）' : ''}`,
+      `按天：${s.days.map((x) => `${x.date.slice(5)} ${x.n} 条`).join('、')}`,
+    ];
+    if (s.journal.length) lines.push('日志：', ...s.journal.map((j) => `- ${j.date} ${j.summary}`));
+    lines.push('');
+    return lines;
+  }
+
+  function get(args = {}) {
+    const r = getData(args);
+    if (r.error) return r.error;
+    const out = [...headLines(r.session)];
+    for (const m of r.messages) out.push(blockOf(m, m.truncated ? m.text + CUT : m.text));
+    if (r.next) out.push(`…后面还有，接着读用 from=${r.next}${r.date ? ` date=${r.date}` : ''}`);
+    if (r.empty) out.push(r.date ? `${r.date} 这天这个会话没有消息。` : '（没有消息）');
     return out.join('\n');
   }
 
@@ -757,5 +792,5 @@ export function createConvLog(ctx) {
     return out;
   }
 
-  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, readMessages, index: () => index, journal: () => journal, refOf };
+  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, readMessages, index: () => index, journal: () => journal, refOf };
 }

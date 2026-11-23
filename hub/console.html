@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-memory</title>
+<link rel="stylesheet" href="/console/console.css">
+<link rel="stylesheet" href="/console/console-memory.css">
+<link rel="stylesheet" href="/console/console-admin.css">
+</head>
+<body>
+<canvas id="stars"></canvas>
+<aside class="side">
+  <a class="brand" href="#/overview"><span class="orb"></span><span>agent-memory</span></a>
+  <nav class="nav" id="nav"></nav>
+</aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+  <header class="top">
+    <button id="menu" aria-label="菜单">☰</button>
+    <h1 id="title">概览</h1>
+    <span class="sp"></span>
+    <a class="lk hot" href="/browse/wrapped">年度报告 ✦</a>
+    <a class="lk" href="/wall">大屏</a>
+  </header>
+  <main class="pages" id="pages"><div class="soon" id="boot"><div><b>读取中…</b></div></div></main>
+</div>
+<script src="/console/console-core.js"></script>
+<script src="/console/console-overview.js"></script>
+<script src="/console/console-work.js"></script>
+<script src="/console/console-graph.js"></script>
+<script src="/console/console-access.js"></script>
+<script src="/console/console-memory.js"></script>
+<script src="/console/console-admin.js"></script>
+<script>Console.start();</script>
+</body>
+</html>

@@ -61,7 +61,7 @@
 </head>
 <body>
 <div class="bg" id="bg"></div>
-<a class="home" href="/browse/viz">← 工作宇宙</a>
+<a class="home" href="/console">← 控制台</a>
 <div class="loading" id="loading">正在翻你这几个月的对话…（第一次要统计一下，几秒钟）</div>
 <div id="slides"></div>
 <div class="nav" id="nav"></div>
@@ -191,7 +191,7 @@ function build(d) {
       <div class="big"><span data-n="${d.memories.total}">0</span></div>
       <h2>条记忆，所有机器、所有智能体共享</h2>
       <p>每 10 分钟，新的对话汇进来；每天三次，写成日志。<br>明天你在任何一台机器上问"那件事哪天做的"，它都记得。</p>
-      <p style="margin-top:22px"><a href="/browse/viz" style="color:#9ec5f4">去工作宇宙看看 →</a>　<a href="/browse/viz#replay" style="color:#f5b08f">看时光回放 ▶</a></p></div>`,
+      <p style="margin-top:22px"><a href="/console" style="color:#9ec5f4">去控制台看看 →</a>　<a href="/console#/timeline/replay" style="color:#f5b08f">看时光回放 ▶</a></p></div>`,
   ].filter(Boolean);
   $('slides').innerHTML = pages.map((h) => `<section class="slide">${h}</section>`).join('');
   $('nav').innerHTML = pages.map((_, i) => `<i data-i="${i}"></i>`).join('');

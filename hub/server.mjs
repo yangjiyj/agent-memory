@@ -28,9 +28,10 @@ import { createPipeline } from './pipeline.mjs';
 import { createConvLog } from './convlog.mjs';
 import { createVault } from './vault.mjs';
 import { createExtras } from './extras.mjs';
+import { createAdmin } from './admin.mjs';
 
 const run = promisify(execFile);
-const VERSION = '0.8.0';
+const VERSION = '0.9.0';
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.AGENT_MEMORY_CONFIG || '/srv/agent-memory/config.json';
 const CFG = Object.assign(
@@ -324,7 +325,8 @@ function bindPeer(device, peer) {
 // 浏览页的访问者：网关认出的身份必须绑定在一个已登记的设备上，且不在拒绝名单里
 function browseViewer(req) {
   const peer = gatePeer(req);
-  if (!peer) return null;
+  // 配置了 console_viewer（设备名）时，没有网关身份的浏览器按这台设备算：只用于可信内网和本地开发
+  if (!peer) return CFG.console_viewer && loadTokens().devices?.[CFG.console_viewer] ? CFG.console_viewer : null;
   if ((CFG.auto_register_deny || []).some((re) => new RegExp(re, 'i').test(peer.name))) return null;
   const peers = readJSON(peersFile(), {});
   const { devices = {} } = loadTokens();
@@ -357,7 +359,7 @@ function autoRegister(req) {
     device = peer.name;
     for (let i = 2; devices[device] && peers[device]?.peer !== peer.key; i++) device = `${peer.name}-${i}`;
   }
-  const token = addDeviceToken(device, 'device');
+  const token = addDeviceToken(device, 'device', 'gateway');
   bindPeer(device, { ...peer, os: peer.os });
   appendJsonl(path.join(CFG.state, 'auto-register.jsonl'), { t: nowIso(), peer: peer.key, device, result: 'ok' });
   console.log(`auto-register: ${peer.key} -> ${device}`);
@@ -709,7 +711,7 @@ function registerJoin(code, name) {
   const { devices = {} } = loadTokens();
   let device = base;
   for (let i = 2; devices[device]; i++) device = `${base}-${i}`;
-  const token = addDeviceToken(device, 'device');
+  const token = addDeviceToken(device, 'device', 'join');
   it.uses++;
   fs.writeFileSync(joinFile(), JSON.stringify(all, null, 1), { mode: 0o600 });
   console.log(`join: registered device ${device}`);
@@ -737,6 +739,31 @@ function joinCommands(code, base = CFG.public_url) {
     sh: `curl -fsSL ${u}/sh | bash`,
     ps1: `irm ${u}/ps1 | iex`,
   };
+}
+
+// 生成加入码和安装命令（命令行 join-code 和控制台接口共用）
+function newJoinCode(days = 7, base = CFG.public_url) {
+  const code = createJoinCode(days);
+  return { code, days, expires: new Date(Date.now() + days * 86400e3).toISOString(), ...joinCommands(code, base), page: `${base}/join/${code}` };
+}
+
+// 改设备的巡检和权限参数（命令行 device-set 和控制台接口共用）。changes 里没出现的键不动；
+// stale_hours 给数字、paused/readonly 给 true、hide_projects 给非空数组是设置，其余（null、false、空数组）是清除
+function deviceSet(name, changes) {
+  const tokens = loadTokens();
+  const d = tokens.devices?.[name];
+  if (!d) throw new UserError(`没有设备 ${name}`);
+  for (const k of Object.keys(changes)) if (!['stale_hours', 'paused', 'readonly', 'hide_projects'].includes(k)) throw new UserError(`不认识的参数 ${k}`);
+  for (const [k, v] of Object.entries(changes)) {
+    if (k === 'hide_projects') { if (v?.length) d.hide_projects = v; else delete d.hide_projects; }
+    else if (k === 'stale_hours') { if (v) d.stale_hours = v; else delete d.stale_hours; }
+    else if (v === true) d[k] = true;
+    else delete d[k];
+  }
+  const tmp = `${CFG.tokens}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(tokens, null, 1), { mode: 0o600 });
+  fs.renameSync(tmp, CFG.tokens);
+  return { stale_hours: d.stale_hours || null, paused: Boolean(d.paused), readonly: Boolean(d.readonly), hide_projects: d.hide_projects || [] };
 }
 
 function heartbeat(payload, who) {
@@ -1239,12 +1266,15 @@ const TOOLS = [
   },
 ];
 
+const toolDisabled = (name) => Array.isArray(CFG.disabled_tools) && CFG.disabled_tools.includes(name);
+
 function text(t, isError = false) {
   return { content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) };
 }
 
 async function callTool(name, args, who) {
   logUsage(who, `tool:${name}`, args.query || args.id || args.ref || args.title || args.name || args.project || args.date || '');
+  if (toolDisabled(name)) return text(`工具 ${name} 已被管理员停用。`, true);
   if (['memory_remember', 'memory_update', 'memory_retire'].includes(name) && devicePolicy(who.device).readonly) return text('这台机器在共享记忆里设成了只读，不能写。', true);
   try {
     switch (name) {
@@ -1322,7 +1352,7 @@ async function handleRpc(msg, who) {
           instructions: '跨机器、跨智能体共享记忆。涉及项目现状、以前的决定、踩过的坑、用户偏好时先 memory_search；得出值得长期复用的结论时 memory_remember。',
         });
       case 'ping': return ok({});
-      case 'tools/list': return ok({ tools: [...TOOLS, ...CARD_TOOLS] });
+      case 'tools/list': return ok({ tools: [...TOOLS, ...CARD_TOOLS].filter((t) => !toolDisabled(t.name)) });
       case 'tools/call': return ok(await callTool(params?.name, params?.arguments || {}, who));
       case 'resources/list': return ok({ resources: [] });
       case 'resources/templates/list': return ok({ resourceTemplates: [] });
@@ -1374,6 +1404,18 @@ async function backupBundle(res) {
   } finally {
     fs.rmSync(tmp, { force: true });
   }
+}
+
+function forbiddenPage(res) {
+  return send(res, 403, '<!doctype html><meta charset="utf-8"><p style="font:15px sans-serif;padding:24px">只有已经接入共享记忆的你自己的机器能打开这个页面（按 Tailscale 或虚拟机身份识别）。</p>', 'text/html; charset=utf-8');
+}
+
+// 页面和静态文件：每次都读盘，改了文件刷新就生效
+function sendAppFile(res, name, type) {
+  let data;
+  try { data = fs.readFileSync(path.join(APP_DIR, name)); } catch { return send(res, 404, { error: 'not found' }); }
+  res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache' });
+  res.end(data);
 }
 
 function readBody(req, max = 8 << 20) {
@@ -1434,28 +1476,43 @@ async function route(req, res, url) {
     }
     return send(res, 405, { error: 'method not allowed' });
   }
+  if (p.startsWith('/console/api/')) return admin.handle(req, res, url);
   // 短地址：浏览器里只打 IP:端口 就到大屏；/w 年报、/b 记忆浏览（页面本身仍然只对已接入的机器开放）
-  const SHORT = { '/': '/browse/viz', '/viz': '/browse/viz', '/v': '/browse/viz', '/w': '/browse/wrapped', '/wrapped': '/browse/wrapped', '/b': '/browse', '/r': '/browse/viz#replay' };
+  // 旧地址都跳到控制台；/w 年报不变；/wall 是巡航大屏
+  const SHORT = {
+    '/': '/console', '/viz': '/console', '/v': '/console', '/browse/viz': '/console',
+    '/b': '/console#/lib', '/browse': '/console#/lib', '/browse/': '/console#/lib',
+    '/browse/manage': '/console#/triage',
+    '/r': '/console#/timeline/replay',
+    '/w': '/browse/wrapped', '/wrapped': '/browse/wrapped',
+  };
   if (req.method === 'GET' && SHORT[p] && !req.headers.authorization) {
     res.writeHead(302, { location: SHORT[p], 'cache-control': 'no-store' });
     return res.end();
   }
-  // 记忆浏览页：只给已接入的你自己的机器看（凭网关认出的身份，且该身份绑定了一个设备）；不在名单里的机器打不开
+  // 控制台（侧栏导航的单页应用）和巡航大屏：只给已接入的你自己的机器看，身份校验同 /browse
+  if (p === '/console' || p.startsWith('/console/') || p === '/wall') {
+    const viewer = browseViewer(req);
+    if (!viewer) return forbiddenPage(res);
+    if (req.method !== 'GET') return send(res, 405, { error: 'method not allowed' });
+    if (p === '/console' || p === '/console/') {
+      logUsage({ device: viewer, client: 'browser' }, 'console');
+      return sendAppFile(res, 'console.html', 'text/html; charset=utf-8');
+    }
+    if (p === '/wall') {
+      logUsage({ device: viewer, client: 'browser' }, 'wall');
+      return sendAppFile(res, 'wall.html', 'text/html; charset=utf-8');
+    }
+    // 控制台静态文件：只放行 console*.css / console*.js
+    const cf = /^\/console\/(console[\w-]*\.(css|js))$/.exec(p);
+    if (cf) return sendAppFile(res, cf[1], cf[2] === 'css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
+    return send(res, 404, { error: 'not found' });
+  }
+  // 记忆数据接口（控制台和大屏用）：只给已接入的你自己的机器看（凭网关认出的身份，且该身份绑定了一个设备）；不在名单里的机器打不开
   if (p === '/browse' || p.startsWith('/browse/')) {
     const viewer = browseViewer(req);
-    if (!viewer) {
-      return send(res, 403, '<!doctype html><meta charset="utf-8"><p style="font:15px sans-serif;padding:24px">只有已经接入共享记忆的你自己的机器能打开这个页面（按 Tailscale 或虚拟机身份识别）。</p>', 'text/html; charset=utf-8');
-    }
-    if (p === '/browse' || p === '/browse/') {
-      logUsage({ device: viewer, client: 'browser' }, 'browse');
-      return send(res, 200, fs.readFileSync(path.join(APP_DIR, 'browse.html'), 'utf8'), 'text/html; charset=utf-8');
-    }
+    if (!viewer) return forbiddenPage(res);
     if (p === '/browse/data') return send(res, 200, browseData());
-    // 可视化大屏：工作日历、当天泳道、项目河流、机器→智能体→项目
-    if (p === '/browse/viz') {
-      logUsage({ device: viewer, client: 'browser' }, 'viz');
-      return send(res, 200, fs.readFileSync(path.join(APP_DIR, 'viz.html'), 'utf8'), 'text/html; charset=utf-8');
-    }
     if (p === '/browse/viz-data') {
       const active = [...store.values()].filter((e) => e.meta.state === 'active');
       const byType = {};
@@ -1478,10 +1535,7 @@ async function route(req, res, url) {
       const rs = qq ? await extras.semantic(qq, { limit: 20 }) : [];
       return send(res, 200, { status: extras.semanticStatus(), results: rs || [] });
     }
-    if (p === '/browse/manage') {
-      logUsage({ device: viewer, client: 'browser' }, 'manage');
-      return send(res, 200, fs.readFileSync(path.join(APP_DIR, 'manage.html'), 'utf8'), 'text/html; charset=utf-8');
-    }
+    if (p === '/browse/manage-counts') return send(res, 200, extras.manageCounts());
     if (p === '/browse/manage-data') return send(res, 200, extras.manageData());
     if (p === '/browse/manage-action' && req.method === 'POST') {
       const b = await readBody(req);
@@ -1628,6 +1682,7 @@ let pipe = null;
 let conv = null;
 let vault2 = null;
 let extras = null;
+let admin = null;
 
 // 设备端每次同步会比对这个版本号，不一样就自动下载新版替换自己
 function agentVersion() {
@@ -1645,6 +1700,11 @@ async function main() {
   conv = createConvLog({ CFG, nowIso, redactSecrets, findSecret, UserError, readJSON, commit, serial });
   vault2 = createVault({ CFG, store, conv, TYPE_LABEL, fmtLocal, byUpdated, ageDays });
   extras = createExtras({ CFG, store, conv, nowIso, readJSON, appendJsonl, serial, writeEntry, commit, byUpdated, ageDays, TYPE_LABEL, UserError, readJsonl, usageFile, findSecret, redactSecrets });
+  admin = createAdmin({
+    CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
+    heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode,
+    tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
+  });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
   setTimeout(vecTick, 30e3);
   setInterval(vecTick, 10 * 60e3);
@@ -1669,12 +1729,12 @@ async function main() {
   });
 }
 
-function addDeviceToken(name, role = 'device') {
+function addDeviceToken(name, role = 'device', via = '') {
   if (!/^[A-Za-z0-9._-]{2,40}$/.test(name || '')) throw new Error('设备名只能用字母数字 . _ -');
   const tokens = loadTokens();
   tokens.devices ||= {};
   const token = crypto.randomBytes(32).toString('hex');
-  tokens.devices[name] = { sha256: sha256(token), role, created: nowIso() };
+  tokens.devices[name] = { sha256: sha256(token), role, created: nowIso(), ...(via ? { via } : {}) };
   fs.mkdirSync(path.dirname(CFG.tokens), { recursive: true });
   fs.writeFileSync(CFG.tokens, JSON.stringify(tokens, null, 1), { mode: 0o600 });
   return token;
@@ -1689,24 +1749,25 @@ else if (cliCmd === 'invite') {
 } else if (cliCmd === 'join-code') {
   // 生成可重复使用的加入命令（默认 7 天有效），给多台机器用
   const days = parseInt(cliArg1, 10) || 7;
-  const code = createJoinCode(days);
-  const c = joinCommands(code);
-  process.stdout.write(`${days} 天内有效，可以在任意多台机器上用：\nmacOS / Linux：${c.sh}\nWindows PowerShell：${c.ps1}\n说明页：${CFG.public_url}/join/${code}\n`);
+  const j = newJoinCode(days);
+  process.stdout.write(`${days} 天内有效，可以在任意多台机器上用：\nmacOS / Linux：${j.sh}\nWindows PowerShell：${j.ps1}\n说明页：${j.page}\n`);
 } else if (cliCmd === 'device-set') {
   // 设巡检参数：device-set mac stale_hours=48 / device-set 某机 paused=true（停用、不告警）
-  const tokens = loadTokens();
-  const d = tokens.devices?.[cliArg1];
-  if (!d) { process.stderr.write(`没有设备 ${cliArg1}\n`); process.exit(1); }
+  const changes = {};
   for (const kv of process.argv.slice(4)) {
     const [k, v] = kv.split('=');
-    if (k === 'stale_hours') d.stale_hours = Math.max(1, parseInt(v, 10) || 3);
-    else if (k === 'paused') { if (v === 'true') d.paused = true; else delete d.paused; }
-    else if (k === 'readonly') { if (v === 'true') d.readonly = true; else delete d.readonly; }
-    else if (k === 'hide_projects') { if (v) d.hide_projects = v.split(',').map((x) => x.trim()).filter(Boolean); else delete d.hide_projects; }
-    else { process.stderr.write(`不认识的参数 ${k}\n`); process.exit(1); }
+    if (k === 'stale_hours') changes[k] = Math.max(1, parseInt(v, 10) || 3);
+    else if (k === 'paused' || k === 'readonly') changes[k] = v === 'true';
+    else if (k === 'hide_projects') changes[k] = v ? v.split(',').map((x) => x.trim()).filter(Boolean) : null;
+    else changes[k] = undefined; // 不认识的参数，交给 deviceSet 报错
   }
-  fs.writeFileSync(CFG.tokens, JSON.stringify(tokens, null, 1), { mode: 0o600 });
-  process.stdout.write(`${cliArg1}: ${JSON.stringify({ stale_hours: d.stale_hours || null, paused: Boolean(d.paused), readonly: Boolean(d.readonly), hide_projects: d.hide_projects || [] })}\n`);
+  try {
+    process.stdout.write(`${cliArg1}: ${JSON.stringify(deviceSet(cliArg1, changes))}\n`);
+  } catch (e) {
+    if (!(e instanceof UserError)) throw e;
+    process.stderr.write(`${e.message}\n`);
+    process.exit(1);
+  }
 } else if (cliCmd === 'rename-device') {
   // 改设备名（令牌不变）：设备上 config.json 里的 device 字段只是显示用，可以不改
   const tokens = loadTokens();

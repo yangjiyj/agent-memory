@@ -8,7 +8,7 @@
 
 - **共享记忆**：各智能体自带的记忆文件（Claude Code 的 memory、Hermes 的 USER.md、WorkBuddy 的 MEMORY.md…）自动同步到中心；任何智能体都能通过 MCP 工具查、写；每个工具的指令文件里自动放一份摘要（偏好、项目现状、最近在做什么）。
 - **对话存档 + 工作日志**：所有智能体的对话（只留你和助手说的话，密钥自动打码）增量上传、长期存档；每天用一个便宜的模型给每个会话写一句"这天做了什么"。任何机器上问"上周四干了什么""那个部署是哪天做的"都能答。
-- **可视化**：浏览器打开中心地址就是一个大屏——工作日历、当天各机器各智能体的泳道、项目河流、旋转的"工作星系"、实时作战室、知识图谱、年度报告，还有记忆管理台。
+- **可视化**：浏览器打开中心地址就是控制台（`/console`），侧栏导航——概览（旋转的"工作星系"、实时作战室）、知识图谱、时间线（工作日历、当天各机器各智能体的泳道、作息、大事记）、项目、待办、智能体状态、审计；另有自动巡航的大屏（`/wall`）和年度报告（`/w`）。
 - **零依赖**：中心和设备端都是单个 Node.js 文件（Node ≥ 18），不需要数据库；数据是 git 仓库里一条一个 markdown 文件，随时能看、能备份、能回滚。
 
 > 作者自己每天在 8 台机器、7 种智能体上用。代码以"能用、好改"为先，注释是中文。
@@ -42,7 +42,7 @@
 ```
 agent/kb-agent.mjs     设备端（每台机器一份）：同步记忆、上传对话、写摘要、stdio MCP 代理、自动升级
 hub/                   中心：server.mjs（HTTP + MCP）、convlog（对话存档/日志）、extras（交接包/待办/图谱/语义搜索…）
-                       viz.html 大屏、wrapped.html 年报、manage.html 管理台、browse.html 浏览页
+                       console.html + console.css + console-*.js 控制台（外壳在 console-core.js）、wall.html 巡航大屏、wrapped.html 年报
 worker/                抽取机（任意一台能跑 codex 的机器）：journal.mjs 写工作日志、extract.mjs 抽候选记忆
 gateway/am-gate.py     可选：认证网关，按 Tailscale 机器名 / libvirt 虚拟机名认出调用方，实现"一条命令接入、自动登记"
 gateway/am-embed.py    可选：本地向量服务（fastembed + bge-small-zh），给"按意思搜"用
@@ -78,18 +78,20 @@ node /srv/agent-memory/app/server.mjs join-code 7    # 7 天有效，打印 macO
 
 **4. 按意思搜**（可选）：`pip install fastembed`，跑 `gateway/am-embed.py`，在中心配置里写 `embed_url`。不开也不影响关键词搜索。
 
-打开 `http://<中心>:8790/`（或经网关的 3190）就是大屏。浏览页、大屏只对已经接入、且能被网关认出身份的机器开放。
+打开 `http://<中心>:8790/`（或经网关的 3190）就是控制台，`/wall` 是大屏。控制台、大屏只对已经接入、且能被网关认出身份的机器开放。旧地址 `/browse`、`/browse/viz`、`/browse/manage`、`/b`、`/v`、`/r` 会自动跳到控制台对应页面。
+
+没有网关的环境（本机开发、可信内网）可以在 `config.json` 里写 `"console_viewer": "<设备名>"`：认不出身份的浏览器一律按这台设备算。**风险**：能连到这个端口的人就能看到全部记忆和对话摘要，只在不对外的地址上用，生产环境不要配。
 
 ## 安全和隐私
 
 - 写入前拦截私钥、各类 API Key/令牌、JWT、口令赋值、高熵串；原生记忆和对话里的疑似密钥打码后再存。
 - 令牌只存 sha256；角色分 device / extractor / reporter / admin。可以给某台机器设只读、或隐藏某些项目（`server.mjs device-set <设备> readonly=true hide_projects=a,b`）。
-- 审计：每次查询/写入都记在 `state/usage.jsonl`，大屏有审计面板。
+- 审计：每次查询/写入都记在 `state/usage.jsonl`，控制台有审计页。
 - 数据全在你自己的机器上；只有工作日志/抽取那一步会把对话片段发给你配置的模型。
 
 ## 配置项（config.json）
 
-见 [config.example.json](config.example.json)。常用：`public_url`、`archive_dir`、`gate_secret`（和网关一致）、`auto_register_deny`、`embed_url`、`device_labels`（大屏上的设备显示名）、`graph_entities`（知识图谱里要认的机器名、客户现场名）、`digest_budget`、`auto_approve_days`。
+见 [config.example.json](config.example.json)。常用：`public_url`、`archive_dir`、`gate_secret`（和网关一致）、`auto_register_deny`、`embed_url`、`device_labels`（控制台和大屏上的设备显示名）、`graph_entities`（知识图谱里要认的机器名、客户现场名）、`digest_budget`、`auto_approve_days`、`console_viewer`（见上，默认不配）。
 
 ## 许可证
 

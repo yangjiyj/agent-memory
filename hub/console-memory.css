@@ -1,0 +1,127 @@
+/* 记忆页（记忆库、待整理、对话存档）专用样式；令牌和通用组件在 console.css。 */
+
+/* 顶部搜索与筛选 */
+.mem-bar { padding: 12px 14px; }
+.mem-search { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mem-search .inp[type=search] { flex: 1; min-width: 220px; padding: 7px 12px; font-size: 14px; }
+.mem-seg { display: inline-flex; border: 1px solid var(--panel-line); border-radius: 9px; overflow: hidden; }
+.mem-seg button { font: inherit; font-size: 13px; color: var(--text-secondary); background: transparent; border: 0; padding: 6px 14px; cursor: pointer; transition: .15s; }
+.mem-seg button + button { border-left: 1px solid var(--panel-line); }
+.mem-seg button:hover:not(:disabled) { color: var(--text-primary); background: rgba(57, 135, 229, .12); }
+.mem-seg button.on { color: #fff; background: linear-gradient(90deg, rgba(57, 135, 229, .5), rgba(144, 133, 233, .4)); box-shadow: 0 0 14px -4px var(--glow) inset; }
+.mem-seg button:disabled { color: var(--text-muted); opacity: .55; cursor: not-allowed; }
+.mem-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.mem-filters select.inp { max-width: 190px; }
+.mem-filters input[type=date] { color-scheme: dark; }
+.mem-to { color: var(--text-muted); font-size: 13px; }
+
+/* 左列表右详情 */
+.mem-split { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.mem-listp, .mem-detail { height: calc(100vh - 230px); min-height: 440px; margin-bottom: 0; display: flex; flex-direction: column; }
+.mem-listp { padding: 10px 6px 6px 10px; }
+.mem-detail { display: block; overflow-y: auto; padding: 18px 22px; }
+.mem-lh { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 8px 8px 4px; min-height: 34px; }
+.mem-all { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12.5px; cursor: pointer; }
+.mem-vscroll { position: relative; flex: 1; overflow-y: auto; padding-right: 4px; scrollbar-width: thin; scrollbar-color: rgba(134, 182, 239, .3) transparent; }
+.mem-vspace { position: relative; }
+input[type=checkbox], input[type=radio] { accent-color: #3987e5; }
+
+.mem-row { position: absolute; left: 0; right: 0; height: 56px; display: flex; align-items: center; gap: 4px; padding: 0 10px 0 4px; border-radius: 10px; cursor: pointer; border: 1px solid transparent; transition: background .15s, border-color .15s; }
+.mem-row:hover { background: rgba(57, 135, 229, .09); }
+.mem-row.on { background: linear-gradient(90deg, rgba(57, 135, 229, .22), rgba(57, 135, 229, .05)); border-color: rgba(134, 182, 239, .35); box-shadow: 0 0 16px -8px var(--glow); }
+.mem-ck { flex: none; width: 24px; display: grid; place-items: center; align-self: stretch; cursor: default; }
+.mem-ck input { cursor: pointer; }
+.mem-rt { min-width: 0; flex: 1; }
+.mem-title { font-weight: 600; font-size: 13.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mem-meta { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 0; }
+.mem-meta .pill { margin: 0 6px 0 0; flex: none; }
+.mem-meta i { font-style: normal; margin-left: 6px; color: var(--accent); }
+.mem-vscroll > .empty { position: absolute; inset: 0 0 auto 0; z-index: 1; }
+.mem-vscroll > .empty[hidden] { display: none; }
+
+/* 详情 */
+.mem-dtitle { margin: 0 0 8px; font-size: 19px; line-height: 1.35; font-weight: 700; word-break: break-word; }
+.mem-pills { margin-bottom: 10px; }
+.mem-dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0 0 14px; font-size: 12.5px; }
+.mem-dl dt { color: var(--text-muted); }
+.mem-dl dd { margin: 0; color: var(--text-secondary); word-break: break-all; }
+.mem-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
+.mem-acts .hint { margin-left: 4px; }
+.mem-body { margin: 0; padding: 14px 16px; white-space: pre-wrap; word-break: break-word; font: 13px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: var(--text-primary);
+  background: rgba(8, 12, 26, .55); border: 1px solid var(--panel-line); border-radius: 12px; }
+.mem-edit { display: grid; gap: 8px; }
+.mem-edit .inp { width: 100%; }
+.mem-edit textarea.inp { min-height: 260px; }
+.mem-back { display: none; margin-bottom: 12px; }
+.empty.mem-solo, .mem-detail > .empty { padding: 80px 0; }
+.mem-open { margin-left: auto; font-size: 12.5px; text-decoration: none; }
+
+/* 确认框 */
+.mem-modal { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(4, 7, 18, .66); backdrop-filter: blur(3px); animation: fin .18s; }
+.mem-dlg { width: min(440px, calc(100vw - 32px)); padding: 20px 22px 18px; border-radius: 16px; background: linear-gradient(180deg, rgba(20, 29, 56, .98), rgba(12, 18, 38, .98));
+  border: 1px solid rgba(134, 182, 239, .35); box-shadow: 0 30px 80px rgba(0, 0, 0, .6), 0 0 40px -10px var(--glow); }
+.mem-dlg h3 { margin: 0 0 8px; font-size: 16px; word-break: break-word; }
+.mem-dlg p { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; line-height: 1.65; }
+.mem-fld { display: grid; gap: 5px; margin-bottom: 14px; font-size: 12.5px; color: var(--text-secondary); }
+.mem-fld .inp { width: 100%; }
+.mem-dact { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* 待整理 */
+.mem-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.mem-tabs button { font: inherit; font-size: 13.5px; color: var(--text-secondary); background: transparent; border: 1px solid var(--panel-line); border-radius: 999px; padding: 5px 16px; cursor: pointer; transition: .15s; display: inline-flex; align-items: center; gap: 8px; }
+.mem-tabs button:hover { color: var(--text-primary); border-color: rgba(134, 182, 239, .4); }
+.mem-tabs button.on { color: #fff; background: rgba(57, 135, 229, .22); border-color: rgba(134, 182, 239, .55); box-shadow: 0 0 16px -6px var(--glow); }
+.mem-tabs button b { font-size: 12px; font-weight: 600; color: #f5b08f; font-variant-numeric: tabular-nums; }
+.mem-card { border: 1px solid var(--panel-line); border-radius: 12px; padding: 11px 14px; margin-bottom: 9px; background: rgba(11, 16, 32, .55); transition: border-color .2s; }
+.mem-card:hover { border-color: rgba(134, 182, 239, .3); }
+.mem-card .mem-title { white-space: normal; }
+.mem-card .mem-meta { margin-top: 2px; }
+.mem-snip { margin: 8px 0; font-size: 12.5px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; max-height: 4.8em; overflow: hidden; cursor: pointer; mask-image: linear-gradient(#000 60%, transparent); }
+.mem-snip.open { max-height: none; mask-image: none; }
+.mem-card .mem-acts { margin: 0; }
+.mem-grp { border-color: rgba(250, 178, 25, .32); }
+.mem-gr { display: grid; grid-template-columns: 22px 1fr; gap: 6px; padding: 8px 0; border-top: 1px solid rgba(110, 150, 255, .08); cursor: pointer; }
+.mem-gr:first-child { border-top: 0; padding-top: 0; }
+.mem-gr input { margin-top: 3px; }
+.mem-gr .mem-title { white-space: normal; }
+.mem-more { text-align: center; margin: 12px 0 4px; }
+
+/* 对话存档 */
+.mem-sum { color: var(--text-muted); font-size: 12px; padding: 0 6px 8px; }
+#mem-cv-list { padding: 0 4px 0 0; }
+#mem-cv-list > .empty { padding: 60px 0; }
+.mem-hit { border: 1px solid var(--panel-line); border-radius: 12px; padding: 9px 12px; margin-bottom: 8px; background: rgba(11, 16, 32, .55); cursor: pointer; transition: border-color .15s, background .15s; }
+.mem-hit:hover { border-color: rgba(134, 182, 239, .4); }
+.mem-hit.on { border-color: rgba(134, 182, 239, .6); background: rgba(57, 135, 229, .14); }
+.mem-sn { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(110, 150, 255, .14); font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); word-break: break-word; }
+.mem-sn:hover { color: var(--text-primary); }
+.mem-sn i { display: block; font-style: normal; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+mark { background: rgba(250, 178, 25, .28); color: #ffe3a0; border-radius: 3px; padding: 0 1px; }
+.mem-days { margin: 12px 0 6px; }
+.mem-days i { font-style: normal; font-size: 11px; color: var(--text-muted); }
+.mem-jr { margin: 8px 0 4px; font-size: 12.5px; color: var(--text-secondary); border-left: 2px solid rgba(144, 133, 233, .55); padding-left: 10px; }
+.mem-jr i { font-style: normal; color: var(--text-muted); margin-right: 8px; font-variant-numeric: tabular-nums; }
+.mem-msgs { margin-top: 12px; display: grid; gap: 10px; }
+.mem-msg { border: 1px solid var(--panel-line); border-radius: 12px; padding: 9px 13px; max-width: 100%; }
+.mem-msg.u { background: rgba(57, 135, 229, .10); border-color: rgba(57, 135, 229, .28); }
+.mem-msg.a { background: rgba(11, 16, 32, .55); }
+.mem-msg.hit { box-shadow: 0 0 0 1px rgba(250, 178, 25, .6), 0 0 22px -6px rgba(250, 178, 25, .55); }
+.mem-mh { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.mem-mh b { color: var(--text-secondary); font-weight: 600; }
+.mem-mt { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.7; color: var(--text-primary); }
+.mem-msg .btn { margin-top: 8px; font-size: 12px; padding: 2px 10px; }
+
+/* 窄屏：列表和详情二选一 */
+@media (max-width: 960px) {
+  .mem-split { grid-template-columns: 1fr; }
+  .mem-listp, .mem-detail { height: auto; min-height: 0; }
+  .mem-listp { height: calc(100vh - 300px); min-height: 360px; }
+  .mem-split[data-open="1"] .mem-listp { display: none; }
+  .mem-split:not([data-open="1"]) .mem-detail { display: none; }
+  .mem-back { display: inline-block; }
+  .mem-filters select.inp { max-width: none; flex: 1 1 140px; }
+}
+.mem-detail .mem-meta { white-space: normal; flex-wrap: wrap; row-gap: 2px; }
+@media (max-width: 960px) {
+  .page:has(.mem-split[data-open="1"]) .mem-bar { display: none; }
+}

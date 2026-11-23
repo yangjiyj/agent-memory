@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>工作宇宙 · 共享记忆</title>
+<title>agent-memory</title>
 <style>
   :root {
     color-scheme: dark;
@@ -98,57 +98,6 @@
   .bars .b .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
   .row2.even { grid-template-columns: 1fr 1fr; }
   .row2.hero { grid-template-columns: 1.55fr 1fr; }
-  .todo { max-height: 380px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(134,182,239,.3) transparent; }
-  .todo .t { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 7px 0; border-top: 1px solid rgba(110,150,255,.08); font-size: 12.5px; }
-  .todo .t .s { color: var(--text-primary); }
-  .todo .t .m { color: var(--text-muted); font-size: 11.5px; margin-top: 2px; }
-  .todo .t .btns { display: flex; gap: 4px; align-items: flex-start; }
-  .todo .t button, .ho button { font: inherit; font-size: 12px; color: var(--text-primary); background: rgba(57,135,229,.14); border: 1px solid var(--panel-line); border-radius: 7px; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
-  .todo .t button:hover, .ho button:hover { background: rgba(57,135,229,.3); }
-  .ho { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-  .ho select, .ho input { font: inherit; font-size: 13px; color: var(--text-primary); background: rgba(11,16,32,.7); border: 1px solid var(--panel-line); border-radius: 8px; padding: 4px 8px; }
-  #hoOut { width: 100%; height: 330px; resize: vertical; font: 12.5px/1.55 ui-monospace, Menlo, Consolas, monospace; color: var(--text-primary); background: rgba(11,16,32,.65); border: 1px solid var(--panel-line); border-radius: 10px; padding: 10px; }
-  .kg { display: grid; grid-template-columns: 1fr 260px; gap: 10px; }
-  #kg { width: 100%; height: 440px; display: block; cursor: grab; border-radius: 12px; background: radial-gradient(ellipse at center, rgba(144,133,233,.08), transparent 70%); }
-  .kgside { font-size: 12.5px; color: var(--text-secondary); white-space: pre-wrap; max-height: 440px; overflow-y: auto; border-left: 1px solid var(--panel-line); padding-left: 10px; }
-  .sem { max-height: 420px; overflow-y: auto; }
-  .sem div { padding: 6px 0; border-top: 1px solid rgba(110,150,255,.08); font-size: 12.5px; cursor: pointer; }
-  .sem div:hover { background: rgba(57,135,229,.06); }
-  .sem div i { font-style: normal; display: inline-block; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #3987e5, #9085e9); vertical-align: middle; margin-right: 6px; }
-  .sem div em { font-style: normal; color: var(--text-muted); font-size: 11.5px; margin-left: 4px; }
-  .au { display: grid; grid-template-columns: 1fr 1.6fr; gap: 18px; }
-  .au table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  .au td, .au th { padding: 4px 6px; border-top: 1px solid rgba(110,150,255,.08); text-align: left; }
-  .au th { color: var(--text-secondary); font-weight: 500; }
-  .au .ev { max-height: 300px; overflow-y: auto; font-size: 12px; }
-  .au .ev div { display: grid; grid-template-columns: 70px 190px 130px 1fr; gap: 8px; padding: 3px 0; border-top: 1px solid rgba(110,150,255,.06); }
-  .au .ev i { font-style: normal; color: var(--text-muted); }
-  .agrid { overflow-x: auto; }
-  .agrid table { border-collapse: separate; border-spacing: 6px; width: max-content; min-width: 100%; }
-  .agrid th { font-weight: 500; color: var(--text-secondary); font-size: 12px; text-align: left; padding: 0 4px; white-space: nowrap; }
-  .agrid td { vertical-align: top; }
-  .agrid .dev { min-width: 150px; font-size: 13px; }
-  .agrid .dev b { display: block; font-size: 13.5px; }
-  .agrid .dev small { color: var(--text-muted); font-size: 11.5px; }
-  .agrid .c { border: 1px solid var(--panel-line); border-radius: 10px; padding: 7px 9px; background: rgba(11,16,32,.55); font-size: 12px; width: 170px; transition: box-shadow .3s; }
-  .agrid .c.now { border-color: rgba(134,182,239,.75); box-shadow: 0 0 16px -3px var(--glow); }
-  .agrid .c.na { border-style: dashed; color: var(--text-muted); text-align: center; background: transparent; }
-  .agrid .pill, .memwrap .pill { display: inline-flex; align-items: center; gap: 3px; border-radius: 999px; padding: 0 7px; font-size: 11.5px; margin: 0 4px 3px 0; border: 1px solid; }
-  .pill.ok { color: #6fdc6f; border-color: rgba(12,163,12,.55); background: rgba(12,163,12,.12); }
-  .pill.warn { color: #fbc54b; border-color: rgba(250,178,25,.5); background: rgba(250,178,25,.10); }
-  .pill.bad { color: #f08a8a; border-color: rgba(208,59,59,.5); background: rgba(208,59,59,.10); }
-  .pill.dim { color: var(--text-muted); border-color: rgba(148,163,184,.25); }
-  .agrid .n { color: var(--text-secondary); margin-top: 2px; font-variant-numeric: tabular-nums; }
-  .agrid .n em, .agrid .c em { font-style: normal; color: var(--text-primary); }
-  .memwrap { display: grid; grid-template-columns: 270px 1fr 1fr 1.2fr; gap: 18px; align-items: start; }
-  .memwrap h3 { margin: 0 0 6px; font-size: 12.5px; color: var(--text-secondary); font-weight: 500; }
-  .memwrap .tot { font-size: 40px; font-weight: 700; text-shadow: 0 0 18px var(--glow); font-variant-numeric: tabular-nums; }
-  .memwrap .st { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
-  .memwrap .bars .b { grid-template-columns: 120px 1fr 40px; }
-  .memwrap .rec div { display: grid; grid-template-columns: 34px 1fr; gap: 6px; font-size: 12.5px; padding: 4px 0; border-top: 1px solid rgba(110,150,255,.08); }
-  .memwrap .rec i { font-style: normal; font-size: 11px; color: var(--text-muted); }
-  .memwrap .rec span em { font-style: normal; color: var(--text-muted); font-size: 11.5px; margin-left: 4px; }
-  @media (max-width: 1200px) { .memwrap { grid-template-columns: 1fr 1fr; } }
   #galaxy { width: 100%; height: 470px; display: block; cursor: grab; border-radius: 12px; background: radial-gradient(ellipse at center, rgba(57,135,229,.10), transparent 70%); }
   #galaxy:active { cursor: grabbing; }
   #live { width: 100%; height: 300px; display: block; }
@@ -159,11 +108,6 @@
   .feed div { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 3px 0; border-top: 1px solid rgba(110,150,255,.08); animation: fin .4s; }
   .feed div i { font-style: normal; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .feed div em { font-style: normal; color: var(--text-secondary); }
-  body.kiosk header a, body.kiosk header .live { display: none; }
-  body.kiosk .wrap { max-width: none; padding: 14px 22px; }
-  body.kiosk #galaxy { height: 560px; }
-  header a.hot { color: #fff; border-color: transparent; background: linear-gradient(90deg, #3987e5, #9085e9, #d55181); background-size: 200% 100%; animation: hue 6s linear infinite; box-shadow: 0 0 16px -2px rgba(144,133,233,.6); }
-  @keyframes hue { to { background-position: 200% 0; } }
   .tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   #sform { display: flex; gap: 6px; }
   #sq { font: inherit; font-size: 13px; width: 300px; color: var(--text-primary); background: rgba(11,16,32,.7); border: 1px solid var(--panel-line); border-radius: 8px; padding: 5px 10px; outline: none; }
@@ -195,135 +139,119 @@
   .ms .it .tx em { font-style: normal; color: var(--text-muted); font-size: 11.5px; margin-left: 6px; }
   @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, 1fr); } .row2, .row2.even, .row2.hero { grid-template-columns: 1fr; } .replay.on { grid-template-columns: 1fr; } .replay #rLines { grid-column: 1; grid-row: auto; } }
   @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+
+  header .hbar { display: flex; gap: 12px; align-items: center; }
+  .dots { display: flex; gap: 7px; align-items: center; }
+  .dots button { width: 9px; height: 9px; padding: 0; border-radius: 50%; border: 1px solid var(--panel-line); background: rgba(134,182,239,.18); cursor: pointer; transition: .2s; }
+  .dots button.on { background: #86b6ef; box-shadow: 0 0 10px #3987e5; width: 22px; border-radius: 6px; }
+  body.cruise .dots { display: flex; } body:not(.cruise) .dots { display: none; }
+  body.cruise .scene { display: none; }
+  body.cruise .scene.on { display: block; animation: fin .55s; }
+  body.cruise .wrap { max-width: none; padding: 16px 26px 20px; }
+  body.cruise #galaxy { height: calc(100vh - 340px); min-height: 360px; }
+  body.cruise #live { height: calc(100vh - 560px); min-height: 220px; }
+  body.cruise .feed { max-height: 160px; }
+  body.cruise .cards { max-height: calc(100vh - 560px); min-height: 160px; }
+  body.cruise .ms { max-height: calc(100vh - 420px); }
 </style>
 </head>
-<body>
+<body class="cruise">
 <canvas id="stars"></canvas>
 <div class="wrap">
   <header>
     <div>
-      <h1>工作宇宙</h1>
-      <div class="sub" id="sub">所有机器 · 所有智能体 · 每一天做了什么</div>
+      <h1>agent-memory</h1>
+      <div class="sub" id="sub"></div>
     </div>
-    <div style="display:flex;gap:12px;align-items:center">
-      <span class="live"><i></i>每 10 分钟汇入新对话</span>
-      <button id="kiosk" class="play">⛶ 大屏</button>
-      <a href="/browse/manage">记忆管理台</a>
-      <a href="/browse/wrapped" class="hot">年度报告 ✦</a>
-      <a href="/browse">记忆浏览 →</a>
+    <div class="hbar">
+      <div class="dots" id="dots"></div>
+      <button id="cruise" class="play">⏸ 暂停巡航</button>
+      <button id="fs" class="play">⛶ 全屏</button>
+      <a href="/console">返回控制台</a>
     </div>
   </header>
 
   <section class="kpis" id="kpis"></section>
 
-  <div class="row2 hero">
-    <section class="panel">
-      <div class="ph"><h2>工作星系</h2><span class="hint">每颗星是一个会话，按项目聚成星团，越亮消息越多；拖动旋转、滚轮缩放、点一颗星看那天</span></div>
-      <div class="legend" id="galLegend"></div>
-      <canvas id="galaxy"></canvas>
-    </section>
-    <section class="panel">
-      <div class="ph"><h2>实时作战室</h2><span class="hint" id="liveHint">每 30 秒刷新</span></div>
-      <div class="livebar" id="liveBar"></div>
-      <canvas id="live"></canvas>
-      <div class="feed" id="feed"></div>
-    </section>
+  <div class="scene">
+    <div class="row2 hero">
+      <section class="panel">
+        <div class="ph"><h2>工作星系</h2></div>
+        <div class="legend" id="galLegend"></div>
+        <canvas id="galaxy"></canvas>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2>实时作战室</h2></div>
+        <div class="livebar" id="liveBar"></div>
+        <canvas id="live"></canvas>
+        <div class="feed" id="feed"></div>
+      </section>
+    </div>
   </div>
 
-  <div class="row2 even">
-    <section class="panel">
-      <div class="ph"><h2>待办雷达</h2><span class="hint" id="todoHint">日志里最后还是"进行中/卡住"的事</span></div>
-      <div class="chips" id="todoChips"></div>
-      <div class="todo" id="todos"><div class="empty">读取中…</div></div>
-    </section>
-    <section class="panel">
-      <div class="ph"><h2>一键交接包</h2><span class="hint">选项目和天数，生成可以直接贴给新会话/新智能体的接力提示词</span></div>
-      <form class="ho" id="hoForm"><select id="hoProj"></select><select id="hoDays"><option value="7">最近 7 天</option><option value="14" selected>最近 14 天</option><option value="30">最近 30 天</option><option value="60">最近 60 天</option></select><input id="hoQ" placeholder="可选：再加个关键词"><button>生成</button><button type="button" id="hoCopy">复制</button></form>
-      <textarea id="hoOut" readonly placeholder="生成后在这里，点「复制」贴给新会话。智能体里也能直接用 memory_handoff 工具。"></textarea>
-    </section>
-  </div>
-
-  <div class="row2 hero">
-    <section class="panel">
-      <div class="ph"><h2>知识图谱</h2><span class="hint">项目、机器、客户现场、版本号：一起出现在同一条记忆或日志里就连线；点一个看详情，可拖动</span></div>
-      <div class="legend" id="kgLegend"></div>
-      <div class="kg"><canvas id="kg"></canvas><div class="kgside" id="kgSide">点图上的一个点，看它和谁有关、出现过哪些版本、最近的相关记录。</div></div>
-    </section>
-    <section class="panel">
-      <div class="ph"><h2>按意思搜</h2><span class="hint" id="semHint">不用记关键词，说个大概意思</span></div>
-      <form id="semForm" autocomplete="off" class="ho"><input id="semQ" placeholder="比如：上次那个签名密钥丢了怎么办的" style="flex:1"><button>搜</button></form>
-      <div class="sem" id="semOut"></div>
-    </section>
-  </div>
-
-  <section class="panel">
-    <div class="ph"><h2>智能体状态</h2><span class="hint">每台机器上的每个智能体：插件、说明、记了多少、存了多少对话、最近 7 天查共享记忆几次；发光 = 20 分钟内在干活</span></div>
-    <div class="agrid" id="agents"><div class="empty">读取中…</div></div>
-  </section>
-
-  <section class="panel">
-    <div class="ph"><h2>共享记忆全景</h2><span class="hint" id="memHint"></span></div>
-    <div class="memwrap" id="mem"><div class="empty">读取中…</div></div>
-  </section>
-
-  <section class="panel" id="calPanel">
-    <div class="ph">
-      <h2>工作日历</h2>
-      <div class="tools">
-        <form id="sform" autocomplete="off"><input id="sq" placeholder="搜一个词，看哪些天做过：部署、登录页、2.9.20…"><button>点亮</button></form>
-        <button id="play" class="play">▶ 时光回放</button>
+  <div class="scene">
+    <section class="panel" id="calPanel">
+      <div class="ph">
+        <h2>工作日历</h2>
+        <div class="tools">
+          <form id="sform" autocomplete="off"><input id="sq" placeholder="搜一个词，看哪些天做过：部署、登录页、2.9.20…"><button>点亮</button></form>
+          <button id="play" class="play">▶ 时光回放</button>
+        </div>
       </div>
-    </div>
-    <div class="hint" id="shint">每格一天，越亮当天会话越多；点一格看那天的泳道</div>
-    <div id="cal"></div>
-    <div class="replay" id="replay"><div class="rd" id="rDate"></div><div class="rk" id="rKpi"></div><div id="rLines"></div></div>
-  </section>
-
-  <section class="panel">
-    <div class="ph">
-      <h2>当天在做什么</h2>
-      <div class="daynav"><button id="prev">‹ 前一天</button><span class="d" id="dayLabel">—</span><button id="next">后一天 ›</button><button id="today">今天</button></div>
-    </div>
-    <div class="legend" id="dayLegend"></div>
-    <div id="lanes"></div>
-    <div class="cards" id="cards"></div>
-  </section>
-
-  <div class="row2">
-    <section class="panel">
-      <div class="ph"><h2>项目河流</h2><span class="hint">每周各项目的会话段数</span></div>
-      <div class="legend" id="riverLegend"></div>
-      <div id="river"></div>
-    </section>
-    <section class="panel">
-      <div class="ph"><h2>项目排行</h2><span class="hint">累计会话段数</span></div>
-      <div class="bars" id="rank"></div>
+      <div class="hint" id="shint"></div>
+      <div id="cal"></div>
+      <div class="replay" id="replay"><div class="rd" id="rDate"></div><div class="rk" id="rKpi"></div><div id="rLines"></div></div>
     </section>
   </div>
 
-  <div class="row2 even">
+  <div class="scene">
     <section class="panel">
-      <div class="ph"><h2>作息打卡</h2><span class="hint">一周七天 × 24 小时，你给智能体发消息的次数</span></div>
-      <div class="chips" id="punchTools"></div>
-      <div id="punch"></div>
-      <div class="hint" id="punchNote" style="margin-top:6px"></div>
-    </section>
-    <section class="panel">
-      <div class="ph"><h2>大事记</h2><span class="hint" id="msCount">日志里的上线、发布、交付、升级现场、合并 main</span></div>
-      <div class="chips" id="msChips"></div>
-      <div class="ms" id="ms"></div>
+      <div class="ph">
+        <h2>当天在做什么</h2>
+        <div class="daynav"><button id="prev">‹ 前一天</button><span class="d" id="dayLabel">—</span><button id="next">后一天 ›</button><button id="today">今天</button></div>
+      </div>
+      <div class="legend" id="dayLegend"></div>
+      <div id="lanes"></div>
+      <div class="cards" id="cards"></div>
     </section>
   </div>
 
-  <section class="panel">
-    <div class="ph"><h2>审计</h2><span class="hint" id="auHint">最近 7 天：哪个智能体什么时候查了、写了什么</span></div>
-    <div class="au" id="audit"><div class="empty">读取中…</div></div>
-  </section>
+  <div class="scene">
+    <div class="row2">
+      <section class="panel">
+        <div class="ph"><h2>项目河流</h2></div>
+        <div class="legend" id="riverLegend"></div>
+        <div id="river"></div>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2>项目排行</h2></div>
+        <div class="bars" id="rank"></div>
+      </section>
+    </div>
+  </div>
 
-  <section class="panel">
-    <div class="ph"><h2>机器 → 智能体 → 项目</h2><span class="hint">线越粗，经过的会话段越多</span></div>
-    <div id="sankey"></div>
-  </section>
+  <div class="scene">
+    <div class="row2 even">
+      <section class="panel">
+        <div class="ph"><h2>作息打卡</h2></div>
+        <div class="chips" id="punchTools"></div>
+        <div id="punch"></div>
+        <div class="hint" id="punchNote" style="margin-top:6px"></div>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2>大事记</h2><span class="hint" id="msCount"></span></div>
+        <div class="chips" id="msChips"></div>
+        <div class="ms" id="ms"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="scene">
+    <section class="panel">
+      <div class="ph"><h2>机器 → 智能体 → 项目</h2></div>
+      <div id="sankey"></div>
+    </section>
+  </div>
 
   <div class="hint" id="foot" style="text-align:center;margin-top:8px"></div>
 </div>
@@ -467,7 +395,7 @@ $('sform').addEventListener('submit', async (ev) => {
   SEARCH = r;
   const ds = Object.keys(r.dates);
   $('shint').innerHTML = ds.length
-    ? `「${esc(r.q)}」出现在 <b>${r.days}</b> 天、<b>${r.sessions}</b> 个会话里，最早 ${ds[0]}，最近 ${ds[ds.length - 1]}；点亮的格子点进去看那天<a id="sclear">清除</a>`
+    ? `「${esc(r.q)}」出现在 <b>${r.days}</b> 天、<b>${r.sessions}</b> 个会话里，最早 ${ds[0]}，最近 ${ds[ds.length - 1]}<a id="sclear">清除</a>`
     : `没找到「${esc(r.q)}」<a id="sclear">清除</a>`;
   $('sclear').onclick = clearSearch;
   renderCalendar();
@@ -475,7 +403,7 @@ $('sform').addEventListener('submit', async (ev) => {
 });
 function clearSearch() {
   SEARCH = null; $('sq').value = '';
-  $('shint').textContent = '每格一天，越亮当天会话越多；点一格看那天的泳道';
+  $('shint').textContent = '';
   renderCalendar();
 }
 
@@ -758,7 +686,7 @@ function renderMilestones() {
   $('msChips').innerHTML = [['', '全部'], ...projs.map((p) => [p, p])].map(([k, l]) => `<button data-k="${esc(k)}" class="${k === msProject ? 'on' : ''}">${k ? `<b style="background:${colorOf(k)}"></b>` : ''}${esc(l)}</button>`).join('');
   $('msChips').querySelectorAll('button').forEach((b) => { b.onclick = () => { msProject = b.dataset.k; renderMilestones(); }; });
   const list = all.filter((m) => !msProject || m.project === msProject).slice().reverse();
-  $('msCount').textContent = `${list.length} 件（日志里的上线、发布、交付、升级现场、合并 main）`;
+  $('msCount').textContent = `${list.length} 件`;
   let lastMon = '';
   $('ms').innerHTML = list.map((m) => {
     const mon = m.date.slice(0, 7);
@@ -837,6 +765,7 @@ $('play').onclick = () => (playing ? stopReplay(false) : startReplay());
 })();
 
 // ---------------- 工作星系（canvas 伪 3D：每个会话一颗星，按项目聚成旋涡星团） ----------------
+const FITS = []; // 画布尺寸适配函数：场景切换后重新量
 const GAL = { yaw: 0.6, pitch: 0.42, zoom: 1, drag: null, pts: [], proj: [], hover: -1, visible: true, labels: [] };
 function initGalaxy(data) {
   const cv = $('galaxy'); const g = cv.getContext('2d');
@@ -867,7 +796,7 @@ function initGalaxy(data) {
   const bg = Array.from({ length: 260 }, () => ({ x: Math.random(), y: Math.random(), r: Math.random() * 1.1 + 0.2, a: Math.random() * 0.6 + 0.2 }));
   const dpr = devicePixelRatio || 1;
   const fit = () => { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; };
-  fit(); addEventListener('resize', fit);
+  fit(); FITS.push(fit); addEventListener('resize', fit);
   new IntersectionObserver((es) => { GAL.visible = es[0].isIntersecting; }).observe(cv);
   const F = 900;
   const frame = () => {
@@ -943,12 +872,11 @@ async function loadLive() {
   });
   $('liveBar').innerHTML = `<div><b>${d.today.segments}</b> <span>段会话（今天）</span></div><div><b>${(d.today.messages).toLocaleString()}</b> <span>条消息</span></div><div><b>${LIVE.nodes.filter((x) => x.active.length).length}</b><span> / ${LIVE.nodes.length} 台正在干活</span></div>`;
   $('feed').innerHTML = d.recent.map((r) => `<div><i>${esc(ago(r.t))}</i><span>${esc(dev(r.device))} · ${esc(tool(r.tool))} <em>「${esc(r.title)}」</em></span></div>`).join('');
-  $('liveHint').textContent = `${new Date().toLocaleTimeString('zh-CN', { hour12: false })} 更新 · 每 30 秒刷新`;
 }
 function initLive() {
   const cv = $('live'); const g = cv.getContext('2d'); const dpr = devicePixelRatio || 1;
   const fit = () => { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; };
-  fit(); addEventListener('resize', fit);
+  fit(); FITS.push(fit); addEventListener('resize', fit);
   let vis = true; new IntersectionObserver((es) => { vis = es[0].isIntersecting; }).observe(cv);
   const frame = () => {
     requestAnimationFrame(frame);
@@ -1007,232 +935,32 @@ function initLive() {
   requestAnimationFrame(frame);
 }
 
-// ---------------- 大屏模式：全屏、定时刷新、自动巡航 ----------------
-let kioskTimer = null;
-function setKiosk(on) {
-  document.body.classList.toggle('kiosk', on);
-  $('kiosk').textContent = on ? '✕ 退出大屏' : '⛶ 大屏';
-  clearInterval(kioskTimer); kioskTimer = null;
+// ---------------- 巡航：一屏一个场景，自动切换；暂停后所有场景竖着排开 ----------------
+const SCENES = [...document.querySelectorAll('.scene')];
+const DWELL = 14000;
+let sceneIdx = 0; let cruiseTimer = null;
+$('dots').innerHTML = SCENES.map((_, i) => `<button data-i="${i}" aria-label="第 ${i + 1} 屏"></button>`).join('');
+$('dots').querySelectorAll('button').forEach((b) => { b.onclick = () => { setCruise(true, +b.dataset.i); }; });
+function showScene(i) {
+  sceneIdx = i;
+  SCENES.forEach((s, k) => s.classList.toggle('on', k === i));
+  $('dots').querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', k === i));
+  requestAnimationFrame(() => { FITS.forEach((f) => f()); if (DATA) renderAll(); });
+}
+function setCruise(on, at) {
+  document.body.classList.toggle('cruise', on);
+  $('cruise').textContent = on ? '⏸ 暂停巡航' : '▶ 开始巡航';
+  clearInterval(cruiseTimer); cruiseTimer = null;
   if (on) {
-    const sections = [...document.querySelectorAll('.panel')];
-    let k = 0; window.scrollTo({ top: 0, behavior: 'smooth' });
-    kioskTimer = setInterval(() => {
-      k = (k + 1) % (sections.length + 1);
-      if (k === 0) { window.scrollTo({ top: 0, behavior: 'smooth' }); refreshAll(); } else sections[k - 1].scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 12000);
-  }
+    showScene(at ?? sceneIdx);
+    cruiseTimer = setInterval(() => { const n = (sceneIdx + 1) % SCENES.length; showScene(n); if (n === 0) refreshAll(); }, DWELL);
+  } else requestAnimationFrame(() => { FITS.forEach((f) => f()); if (DATA) renderAll(); });
 }
-$('kiosk').onclick = () => {
-  const on = !document.body.classList.contains('kiosk');
-  if (on) document.documentElement.requestFullscreen?.().catch(() => {}); else if (document.fullscreenElement) document.exitFullscreen?.();
-  setKiosk(on);
-};
-document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('kiosk')) setKiosk(false); });
+$('cruise').onclick = () => setCruise(!document.body.classList.contains('cruise'));
+$('fs').onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.().catch(() => {}); };
+addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.fullscreenElement) location.href = '/console'; });
 async function refreshAll() {
-  try {
-    const d = await (await fetch('/browse/viz-data')).json();
-    DATA = d; renderKpis(); renderCalendar(); renderRiver(); renderRank(); renderSankey();
-  } catch { /* 下次再刷 */ }
-}
-
-// ---------------- 智能体状态 / 共享记忆全景 ----------------
-const TYPE_ZH = { preference: '偏好', feedback: '反馈', decision: '决定', status: '现状', pitfall: '坑', fact: '事实', reference: '参考' };
-const ORIGIN_ZH = { native: '工具自己记的', extract: '从会话里抽的', import: '旧卡片拆分', explicit: '智能体主动写' };
-const STATE_ZH = { active: '有效', proposed: '待审候选', superseded: '已被取代', retired: '已作废' };
-const TOOL_ORDER = ['claude-code', 'codex', 'workbuddy', 'workbuddy-ai', 'codebuddy', 'hermes', 'openclaw', 'opencode', 'gemini', 'qwen', 'cursor', 'windsurf', 'claude-desktop'];
-const TOOL_EXTRA = { 'workbuddy-ai': 'WorkBuddy AI', cursor: 'Cursor', windsurf: 'Windsurf', 'claude-desktop': 'Claude 桌面版' };
-const toolName = (t) => TOOL_EXTRA[t] || tool(t);
-function renderAgents(d) {
-  const tools = TOOL_ORDER.filter((t) => d.devices.some((x) => x.wiring[t] || x.cells[t]));
-  const rows = d.devices.slice().sort((a, b) => (a.legacy ? 1 : 0) - (b.legacy ? 1 : 0) || (DEVICE[a.name] ? 0 : 1) - (DEVICE[b.name] ? 0 : 1) || a.name.localeCompare(b.name));
-  const pillMcp = (m) => (m === 'on' ? '<span class="pill ok">✓ 插件</span>' : m === 'off' ? '<span class="pill warn">⏸ 插件停用</span>' : m === 'none' ? '<span class="pill bad">✕ 没插件</span>' : '');
-  const pillNotes = (n) => (n === 'rules' ? '<span class="pill ok">✓ 用法说明</span>' : n === 'digest' ? '<span class="pill ok">✓ 摘要</span>' : n === 'missing' ? '<span class="pill bad">✕ 说明</span>' : '');
-  const head = '<tr><th>机器</th>' + tools.map((t) => '<th>' + esc(toolName(t)) + '</th>').join('') + '<th>命令行</th></tr>';
-  const body = rows.map((x) => {
-    const sAge = x.last_seen ? (Date.now() - Date.parse(x.last_seen)) / 60000 : null;
-    const sync = x.legacy ? '<span class="pill dim">旧机器，只有历史对话</span>'
-      : (sAge !== null && sAge < 15 ? '<span class="pill ok">● ' + esc(ago(x.last_seen)) + '同步</span>' : '<span class="pill bad">● ' + (x.last_seen ? esc(ago(x.last_seen)) + '同步' : '没同步过') + '</span>');
-    const tds = tools.map((t) => {
-      const w = x.wiring[t]; const c = x.cells[t];
-      if (!w && !c) return '<td><div class="c na">—</div></td>';
-      const live = c && c.lastMsg && Date.now() - Date.parse(c.lastMsg) < 20 * 60000;
-      const pills = w ? pillMcp(w.mcp) + pillNotes(w.notes) + (w.memory ? '<span class="pill ok">✓ 记忆同步</span>' : '') : '';
-      const nums = c ? '记忆 <em>' + c.memories + '</em> · 对话 <em>' + c.sessions + '</em> · 查询 <em>' + c.calls + '</em>' : '';
-      const last = (c && c.lastMsg ? '最近对话 ' + esc(ago(c.lastMsg)) : '') + (c && c.lastCall ? ' · 上次查 ' + esc(ago(c.lastCall)) : '');
-      return '<td><div class="c ' + (live ? 'now' : '') + '">' + pills + '<div class="n">' + nums + '</div><div class="n">' + last + '</div></div></td>';
-    }).join('');
-    const cli = x.cells.cli;
-    return '<tr><td class="dev"><b>' + esc(dev(x.name)) + '</b><small>' + esc(x.name) + (x.version ? ' · ' + esc(x.version) : '') + '</small><div>' + sync + '</div></td>' + tds
-      + '<td><div class="c ' + (cli ? '' : 'na') + '">' + (cli ? '查询 <em>' + cli.calls + '</em>' + (cli.writes ? ' · 写 ' + cli.writes : '') : '—') + '</div></td></tr>';
-  }).join('');
-  $('agents').innerHTML = '<table>' + head + body + '</table>';
-}
-function renderMemory(d) {
-  const m = d.memory;
-  $('memHint').textContent = '最近 7 天新增 ' + m.added7 + ' 条 · 待审候选 ' + m.proposed + ' 条 · 超过 14 天没更新的现状 ' + m.staleStatus + ' 条 · 最近 7 天智能体查了 ' + m.calls7 + ' 次';
-  const donut = (pairs) => {
-    const total = pairs.reduce((a, x) => a + x[1], 0) || 1; let a0 = -Math.PI / 2; const R = 54; const r = 34; const cx = 64; const cy = 64;
-    const pt = (ang, rad) => (cx + Math.cos(ang) * rad) + ',' + (cy + Math.sin(ang) * rad);
-    const arcs = pairs.map((x, i) => {
-      const a1 = a0 + (x[1] / total) * Math.PI * 2; const large = a1 - a0 > Math.PI ? 1 : 0; const g = 0.012;
-      const d2 = 'M' + pt(a0 + g, R) + ' A' + R + ',' + R + ' 0 ' + large + ' 1 ' + pt(a1 - g, R) + ' L' + pt(a1 - g, r) + ' A' + r + ',' + r + ' 0 ' + large + ' 0 ' + pt(a0 + g, r) + ' Z';
-      a0 = a1;
-      return '<path d="' + d2 + '" fill="' + SLOTS[i % 7] + '"><title>' + esc(ORIGIN_ZH[x[0]] || x[0]) + '：' + x[1] + '</title></path>';
-    }).join('');
-    return '<svg width="128" height="128" viewBox="0 0 128 128" style="flex:none;filter:drop-shadow(0 0 8px rgba(57,135,229,.35))">' + arcs + '</svg>';
-  };
-  const bars = (pairs, label, color) => { const max = (pairs[0] && pairs[0][1]) || 1; return pairs.map((x) => '<div class="b"><span class="lab">' + esc(label(x[0])) + '</span><span class="track"><span class="fill" style="background:' + color + ';color:' + color + ';width:' + ((100 * x[1]) / max) + '%"></span></span><span class="n">' + x[1] + '</span></div>').join(''); };
-  const srcLabel = (k) => { const ab = k.split('/'); return dev(ab[0]) + ' · ' + toolName(ab[1]); };
-  $('mem').innerHTML = '<div><h3>有效记忆</h3><div class="tot">' + m.total.toLocaleString() + '</div>'
-    + '<div class="st">' + m.byState.map((x) => '<span class="pill ' + (x[0] === 'active' ? 'ok' : x[0] === 'proposed' ? 'warn' : 'dim') + '">' + esc(STATE_ZH[x[0]] || x[0]) + ' ' + x[1] + '</span>').join('') + '</div>'
-    + '<div style="display:flex;gap:12px;align-items:center">' + donut(m.byOrigin) + '<div class="legend" style="flex-direction:column;gap:4px">' + m.byOrigin.map((x, i) => '<span><b style="background:' + SLOTS[i % 7] + '"></b>' + esc(ORIGIN_ZH[x[0]] || x[0]) + ' ' + x[1] + '</span>').join('') + '</div></div></div>'
-    + '<div class="bars"><h3>按类型</h3>' + bars(m.byType, (k) => TYPE_ZH[k] || k, '#3987e5') + '<h3 style="margin-top:12px">按项目</h3>' + bars(m.byProject.filter((x) => x[0] !== '（无）').slice(0, 7), (k) => k, '#9085e9') + '</div>'
-    + '<div class="bars"><h3>按来源（机器 · 智能体）</h3>' + bars(m.bySource.slice(0, 12), srcLabel, '#199e70') + '</div>'
-    + '<div class="rec"><h3>最近更新的记忆</h3>' + m.recent.map((e) => '<div><i>' + esc(TYPE_ZH[e.type] || e.type) + '</i><span>' + esc(e.title) + '<em>' + esc(e.project ? e.project + ' · ' : '') + esc(ago(e.updated)) + '</em></span></div>').join('') + '</div>';
-}
-async function loadAgents() {
-  try { const d = await (await fetch('/browse/viz-agents')).json(); renderAgents(d); renderMemory(d); } catch (e) { console.warn(e); }
-}
-
-// ---------------- 待办雷达 ----------------
-let todoProj = '';
-async function loadTodos() {
-  const r = await (await fetch('/browse/todos')).json();
-  const projs = [...new Set(r.items.map((t) => t.project).filter(Boolean))];
-  $('todoChips').innerHTML = [['', '全部 ' + r.items.length], ...projs.map((p) => [p, p + ' ' + r.items.filter((t) => t.project === p).length])].map(([k, l]) => '<button data-k="' + esc(k) + '" class="' + (k === todoProj ? 'on' : '') + '">' + (k ? '<b style="background:' + colorOf(k) + '"></b>' : '') + esc(l) + '</button>').join('');
-  $('todoChips').querySelectorAll('button').forEach((b) => { b.onclick = () => { todoProj = b.dataset.k; loadTodos(); }; });
-  const list = r.items.filter((t) => !todoProj || t.project === todoProj);
-  $('todoHint').textContent = list.length + ' 件没收尾' + (r.stalled.length ? ' · 停了的项目：' + r.stalled.map((x) => x.project).join('、') : '');
-  $('todos').innerHTML = list.map((t) => '<div class="t"><div><div class="s">' + (t.status === 'blocked' ? '<span class="pill bad">卡住</span>' : '<span class="pill warn">进行中</span>') + (t.project ? '<span class="pill dim">' + esc(t.project) + '</span>' : '') + esc(t.summary) + '</div>'
-    + '<div class="m">' + esc(t.date) + '（' + t.age + ' 天前）· ' + esc(dev(t.device)) + ' · ' + esc(tool(t.tool)) + ' ·「' + esc(t.title) + '」' + (t.points.length ? '<br>' + esc(t.points.slice(0, 3).join('；')) : '') + '</div></div>'
-    + '<div class="btns"><button data-r="' + t.ref + '" data-a="done">✓ 已收尾</button><button data-r="' + t.ref + '" data-a="ignore">不用管</button><button data-d="' + t.date + '">看那天</button></div></div>').join('') || '<div class="empty">没有悬着的事</div>';
-  $('todos').querySelectorAll('button[data-r]').forEach((b) => { b.onclick = async () => { b.disabled = true; await fetch('/browse/todo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ref: b.dataset.r, action: b.dataset.a }) }); loadTodos(); }; });
-  $('todos').querySelectorAll('button[data-d]').forEach((b) => { b.onclick = () => loadDay(b.dataset.d, true); });
-}
-
-// ---------------- 一键交接包 ----------------
-async function initHandoff() {
-  const ps = await (await fetch('/browse/projects')).json();
-  $('hoProj').innerHTML = '<option value="">（按关键词）</option>' + ps.slice(0, 40).map((x) => '<option value="' + esc(x.p) + '">' + esc(x.p) + '（' + x.n + '）</option>').join('');
-  if (ps[0]) $('hoProj').value = ps[0].p;
-  $('hoForm').onsubmit = async (e) => {
-    e.preventDefault();
-    $('hoOut').value = '生成中…';
-    const q = new URLSearchParams({ project: $('hoProj').value, days: $('hoDays').value, query: $('hoQ').value });
-    const r = await fetch('/browse/handoff?' + q);
-    $('hoOut').value = await r.text();
-  };
-  $('hoCopy').onclick = async () => { $('hoOut').select(); try { await navigator.clipboard.writeText($('hoOut').value); $('hoCopy').textContent = '已复制'; } catch { document.execCommand('copy'); $('hoCopy').textContent = '已复制'; } setTimeout(() => { $('hoCopy').textContent = '复制'; }, 1500); };
-}
-
-// ---------------- 按意思搜 ----------------
-$('semForm').onsubmit = async (e) => {
-  e.preventDefault();
-  const q = $('semQ').value.trim(); if (!q) return;
-  $('semOut').innerHTML = '<div class="empty">找…</div>';
-  const r = await (await fetch('/browse/semantic?q=' + encodeURIComponent(q))).json();
-  $('semHint').textContent = r.status.enabled ? '本地向量模型 ' + (r.status.model || '') + ' · 已建 ' + r.status.items + ' 条' : '向量服务没开';
-  if (!r.results.length) { $('semOut').innerHTML = '<div class="empty">没找到</div>'; return; }
-  const max = r.results[0].score || 1;
-  $('semOut').innerHTML = r.results.map((x) => '<div data-d="' + esc(x.date) + '"><i style="width:' + Math.round(60 * x.score / max) + 'px"></i>' + (x.kind === 'memory' ? '<span class="pill dim">' + esc(TYPE_ZH[x.type] || x.type) + '</span>' : '<span class="pill ok">日志</span>') + (x.project ? '<span class="pill dim">' + esc(x.project) + '</span>' : '') + esc(x.title) + '<em>' + esc(x.date) + ' · ' + esc(x.source) + '</em></div>').join('');
-  $('semOut').querySelectorAll('div[data-d]').forEach((n) => { n.onclick = () => loadDay(n.dataset.d, true); });
-};
-
-// ---------------- 知识图谱（力导向） ----------------
-const KG = { nodes: [], edges: [], drag: null, hover: -1, sel: -1 };
-async function initGraph() {
-  const g0 = await (await fetch('/browse/graph')).json();
-  const kindColor = (n) => (n.kind === 'project' ? colorOf(n.name) === OTHER || colorOf(n.name) === UNWRITTEN ? '#8b93a8' : colorOf(n.name) : n.kind === 'machine' ? '#6da7ec' : n.kind === 'site' ? '#ec835a' : '#b9b0f5');
-  const KIND = { project: '项目', machine: '机器', site: '客户现场', version: '版本' };
-  $('kgLegend').innerHTML = ['project', 'machine', 'site', 'version'].filter((k) => g0.nodes.some((n) => n.kind === k)).map((k) => '<span><b style="background:' + (k === 'project' ? '#3987e5' : k === 'machine' ? '#6da7ec' : k === 'site' ? '#ec835a' : '#b9b0f5') + '"></b>' + KIND[k] + ' ' + g0.nodes.filter((n) => n.kind === k).length + '</span>').join('');
-  const cv = $('kg'); const g = cv.getContext('2d'); const dpr = devicePixelRatio || 1;
-  const fit = () => { cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr; };
-  fit(); addEventListener('resize', fit);
-  const idx = new Map(g0.nodes.map((n, i) => [n.id, i]));
-  KG.nodes = g0.nodes.map((n) => ({ ...n, x: (Math.random() - 0.5) * 400, y: (Math.random() - 0.5) * 300, vx: 0, vy: 0, r: 3 + Math.sqrt(n.count) * 0.6, c: kindColor(n) }));
-  KG.edges = g0.edges.map((e) => ({ a: idx.get(e.a), b: idx.get(e.b), w: e.w })).filter((e) => e.a !== undefined && e.b !== undefined);
-  const maxW = Math.max(...KG.edges.map((e) => e.w), 1);
-  let alpha = 1; let vis = true; new IntersectionObserver((es) => { vis = es[0].isIntersecting; }).observe(cv);
-  const step = () => {
-    const N = KG.nodes;
-    for (let i = 0; i < N.length; i++) for (let j = i + 1; j < N.length; j++) {
-      const a = N[i]; const b = N[j]; let dx = a.x - b.x; let dy = a.y - b.y; let d2 = dx * dx + dy * dy || 1;
-      if (d2 > 250000) continue;
-      const f = 2600 / d2 * alpha; const d = Math.sqrt(d2); dx /= d; dy /= d;
-      a.vx += dx * f; a.vy += dy * f; b.vx -= dx * f; b.vy -= dy * f;
-    }
-    for (const e of KG.edges) {
-      const a = N[e.a]; const b = N[e.b]; const dx = b.x - a.x; const dy = b.y - a.y; const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const L = 95; const k = 0.01 * Math.min(1, 0.3 + e.w / maxW) * alpha; const f = (d - L) * k;
-      a.vx += dx / d * f; a.vy += dy / d * f; b.vx -= dx / d * f; b.vy -= dy / d * f;
-    }
-    for (const n of N) { if (n === KG.drag?.n) continue; n.vx -= n.x * 0.0025 * alpha; n.vy -= n.y * 0.0035 * alpha; n.vx *= 0.82; n.vy *= 0.82; n.x += n.vx; n.y += n.vy; }
-    alpha = Math.max(0.05, alpha * 0.995);
-  };
-  for (let i = 0; i < 250; i++) step();
-  let t = 0;
-  const frame = () => {
-    requestAnimationFrame(frame);
-    if (!vis || document.hidden) return;
-    step(); t++;
-    const W = cv.width; const H = cv.height; const cx = W / 2; const cy = H / 2; const sc = dpr;
-    g.clearRect(0, 0, W, H);
-    const sel = KG.sel >= 0 ? KG.sel : KG.hover;
-    const nb = new Set(); if (sel >= 0) for (const e of KG.edges) { if (e.a === sel) nb.add(e.b); if (e.b === sel) nb.add(e.a); }
-    for (const e of KG.edges) {
-      const a = KG.nodes[e.a]; const b = KG.nodes[e.b]; const on = sel >= 0 && (e.a === sel || e.b === sel);
-      g.strokeStyle = on ? 'rgba(232,236,246,.55)' : sel >= 0 ? 'rgba(148,163,184,.05)' : 'rgba(148,163,184,' + (0.06 + 0.22 * e.w / maxW) + ')';
-      g.lineWidth = (on ? 1.6 : 0.6 + 1.6 * e.w / maxW) * dpr;
-      g.beginPath(); g.moveTo(cx + a.x * sc, cy + a.y * sc); g.lineTo(cx + b.x * sc, cy + b.y * sc); g.stroke();
-    }
-    g.globalCompositeOperation = 'lighter';
-    KG.nodes.forEach((n, i) => {
-      const dim = sel >= 0 && i !== sel && !nb.has(i);
-      const x = cx + n.x * sc; const y = cy + n.y * sc; const r = n.r * dpr * (i === sel ? 1.4 : 1);
-      g.globalAlpha = dim ? 0.06 : 0.12; g.fillStyle = n.c; g.beginPath(); g.arc(x, y, r * 2.2, 0, 6.283); g.fill();
-      g.globalAlpha = dim ? 0.25 : 0.95; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-    });
-    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
-    g.textAlign = 'center'; g.font = (11 * dpr) + 'px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
-    KG.nodes.forEach((n, i) => {
-      const dim = sel >= 0 && i !== sel && !nb.has(i);
-      if (dim || (n.kind === 'version' && i !== sel && !nb.has(i)) || (n.count < 6 && i !== sel && !nb.has(i) && sel < 0)) return;
-      g.fillStyle = 'rgba(232,236,246,.9)'; g.fillText(n.name, cx + n.x * sc, cy + n.y * sc - n.r * dpr - 4 * dpr);
-    });
-  };
-  requestAnimationFrame(frame);
-  const at = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) * dpr - cv.width / 2) / dpr, ((e.clientY - r.top) * dpr - cv.height / 2) / dpr]; };
-  const pick = (mx, my) => { let best = -1; let bd = 14 * 14; KG.nodes.forEach((n, i) => { const d = (n.x - mx) ** 2 + (n.y - my) ** 2; if (d < Math.max(bd, n.r * n.r)) { bd = d; best = i; } }); return best; };
-  cv.addEventListener('mousedown', (e) => { const [mx, my] = at(e); const i = pick(mx, my); if (i >= 0) KG.drag = { n: KG.nodes[i], i, moved: false }; });
-  addEventListener('mouseup', () => { setTimeout(() => { KG.drag = null; }, 0); });
-  cv.addEventListener('mousemove', (e) => {
-    const [mx, my] = at(e);
-    if (KG.drag) { KG.drag.n.x = mx; KG.drag.n.y = my; KG.drag.n.vx = 0; KG.drag.n.vy = 0; KG.drag.moved = true; alpha = Math.max(alpha, 0.3); return; }
-    KG.hover = pick(mx, my);
-    if (KG.hover >= 0) { const n = KG.nodes[KG.hover]; showTip(e, '<div class="h">' + esc(n.name) + '</div><div class="r">' + KIND[n.kind] + '<em>' + n.count + ' 次 · 最近 ' + esc(n.last) + '</em></div>'); } else hideTip();
-  });
-  cv.addEventListener('mouseleave', () => { KG.hover = -1; hideTip(); });
-  cv.addEventListener('click', async () => {
-    if (KG.drag && KG.drag.moved) return;
-    KG.sel = KG.hover;
-    if (KG.sel < 0) { $('kgSide').textContent = '点图上的一个点，看它和谁有关、出现过哪些版本、最近的相关记录。'; return; }
-    $('kgSide').textContent = '读取中…';
-    $('kgSide').textContent = await (await fetch('/browse/entity?name=' + encodeURIComponent(KG.nodes[KG.sel].name))).text();
-  });
-}
-
-// ---------------- 审计 ----------------
-async function loadAudit() {
-  const a = await (await fetch('/browse/audit?days=7')).json();
-  $('auHint').textContent = '最近 7 天 ' + a.total + ' 次调用' + (a.rejections.length ? ' · 拒收疑似密钥 ' + a.rejections.length + ' 次' : '');
-  const pol = Object.entries(a.policies).filter(([, v]) => v.readonly || v.hide.length);
-  const fmtT = (iso) => new Date(Date.parse(iso) + 8 * 3600e3).toISOString().slice(5, 16).replace('T', ' ');
-  const OPZ = { memory_search: '搜记忆', memory_get: '读记忆', memory_remember: '写记忆', memory_update: '改记忆', memory_retire: '作废', memory_recent: '最近记忆', memory_digest: '读摘要', memory_timeline: '时间线', conversation_search: '搜原话', conversation_get: '读原文', memory_handoff: '交接包', memory_todos: '待办', memory_entities: '图谱', search: '搜记忆', get: '读记忆', remember: '写记忆', timeline: '时间线', handoff: '交接包', todos: '待办', entities: '图谱', browse: '打开浏览页', viz: '打开大屏', wrapped: '打开年报' };
-  $('audit').innerHTML = '<div><table><tr><th>机器 · 来源</th><th>调用</th><th>写入</th><th>最近</th></tr>'
-    + a.byClient.map(([k, v]) => { const ab = k.split('/'); return '<tr><td>' + esc(dev(ab[0])) + ' · ' + esc(ab[1] === 'cli' ? '命令行' : ab[1] === 'browser' ? '浏览器' : toolName(ab[1])) + '</td><td>' + v.calls + '</td><td>' + v.writes + '</td><td>' + esc(ago(v.last)) + '</td></tr>'; }).join('') + '</table>'
-    + '<div class="chips" style="margin-top:10px">' + a.ops.map(([k, n]) => '<button>' + esc(OPZ[k] || k) + ' ' + n + '</button>').join('') + '</div>'
-    + (pol.length ? '<div class="hint">权限：' + pol.map(([k, v]) => esc(dev(k)) + (v.readonly ? ' 只读' : '') + (v.hide.length ? ' 看不到 ' + esc(v.hide.join('、')) : '')).join('；') + '</div>' : '<div class="hint">权限：所有机器都能读写全部记忆（可在中心用 device-set 设只读或隐藏项目）</div>')
-    + '</div><div class="ev">' + a.events.slice(0, 150).map((u) => { const op = u.op.replace(/^(tool|cli):/, ''); return '<div><i>' + esc(fmtT(u.t)) + '</i><span>' + esc(dev(u.device)) + ' · ' + esc(u.client === 'cli' ? '命令行' : u.client === 'browser' ? '浏览器' : toolName(u.client)) + '</span><span>' + esc(OPZ[op] || op) + '</span><span>' + esc(u.d || '') + '</span></div>'; }).join('') + '</div>';
+  try { DATA = await (await fetch('/browse/viz-data')).json(); renderKpis(); renderAll(); } catch { /* 下次再刷 */ }
 }
 
 // ---------------- 启动 ----------------
@@ -1243,19 +971,17 @@ fetch('/browse/viz-data').then((r) => r.json()).then((d) => {
   TOP = d.projects.filter((x) => x.p !== '未写日志' && x.p !== '其他').slice(0, 7).map((x) => x.p);
   TOP.forEach((p, i) => { COLOR[p] = SLOTS[i]; });
   renderKpis();
-  renderAll();
   const days = Object.keys(d.days).sort();
-  loadDay(d.days[todayStr()] ? todayStr() : days[days.length - 1]);
-  $('foot').textContent = `数据生成于 ${new Date(d.generated).toLocaleString('zh-CN', { hour12: false })} · 来源：共享记忆中心的对话存档和工作日志`;
+  currentDay = d.days[todayStr()] ? todayStr() : days[days.length - 1];
+  setCruise(true, 0);
+  $('foot').textContent = `数据生成于 ${new Date(d.generated).toLocaleString('zh-CN', { hour12: false })}`;
   // 作息、大事记、回放用的每日摘要：第一次要扫一遍存档，可能要几秒
   $('punch').innerHTML = '<div class="empty">正在统计作息…</div>';
   fetch('/browse/viz-extra').then((r) => r.json()).then((x) => { EXTRA = x; renderPunch(); renderMilestones(); });
-  if (location.hash === '#replay') setTimeout(startReplay, 1500);
+  if (location.hash === '#replay') setTimeout(() => { setCruise(false); startReplay(); }, 1500);
   // 星系和作战室
   fetch('/browse/viz-galaxy').then((r) => r.json()).then(initGalaxy);
   initLive(); loadLive(); setInterval(loadLive, 30000);
-  loadAgents(); setInterval(loadAgents, 60000);
-  loadTodos(); initHandoff(); initGraph(); loadAudit(); setInterval(loadAudit, 120000);
 });
 $('prev').onclick = () => currentDay && loadDay(addDays(currentDay, -1));
 $('next').onclick = () => currentDay && loadDay(addDays(currentDay, 1));
