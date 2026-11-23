@@ -4,6 +4,35 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>候选记忆（__COUNT__）</title>
+<script>
+/* 界面语言（和控制台共用 localStorage 的 am.lang，没存过就看浏览器语言）。审批页的链接本身就是凭证，打开它的人不一定取得到 /console/ 下的脚本，
+   所以这里自带一份很小的词典，不依赖 console-i18n.js。 */
+(function () {
+  let l = null; try { l = localStorage.getItem('am.lang'); } catch (e) { /* 读不到就按浏览器语言 */ }
+  if (l !== 'zh' && l !== 'en') l = String(navigator.language || '').toLowerCase().indexOf('zh') === 0 ? 'zh' : 'en';
+  if (l !== 'en') return;
+  document.documentElement.lang = 'en';
+  const D = { '候选记忆': 'Candidate memories', '全部保留': 'Keep all', '没有待审的候选': 'No candidates to review', '展开': 'Expand', '收起': 'Collapse', '保留': 'Keep', '不要': 'Discard',
+    '已保留': 'Kept', '不要了': 'Discarded', '没成功：': 'Failed: ', '偏好': 'Preference', '反馈': 'Feedback', '决定': 'Decision', '现状': 'Status', '坑': 'Pitfall', '事实': 'Fact', '参考': 'Reference' };
+  const T = (s) => {
+    const m = /^(\s*)([\s\S]*?)(\s*)$/.exec(s); const k = m[2];
+    if (D[k] !== undefined) return m[1] + D[k] + m[3];
+    let r;
+    if ((r = /^候选记忆（(\d+)）$/.exec(k))) return `${m[1]}Candidate memories (${r[1]})${m[3]}`;
+    if ((r = /^（(\d+)）$/.exec(k))) return `${m[1]}(${r[1]})${m[3]}`;
+    if ((r = /^从会话里自动抽出来的，(\d+) 天内不处理会自动保留。$/.exec(k))) return `${m[1]}Extracted automatically from sessions; kept automatically if not handled within ${r[1]} days.${m[3]}`;
+    if (k.indexOf('没成功：') === 0) return m[1] + 'Failed: ' + k.slice(4) + m[3];
+    return s;
+  };
+  const walk = (n) => { if (n.nodeType === 3) { const t = T(n.nodeValue); if (t !== n.nodeValue) n.nodeValue = t; } else if (n.nodeType === 1 && !/^(SCRIPT|STYLE)$/.test(n.tagName)) n.childNodes.forEach(walk); };
+  const go = () => {
+    walk(document.documentElement);
+    new MutationObserver((rs) => { for (const r of rs) { if (r.type === 'characterData') walk(r.target); else r.addedNodes.forEach(walk); } }).observe(document.documentElement, { subtree: true, childList: true, characterData: true });
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+  const a = window.alert; window.alert = (m) => a.call(window, T(String(m)));
+})();
+</script>
 <style>
   :root { --fg:#1f2328; --muted:#656d76; --line:#d0d7de; --ok:#1a7f37; --no:#cf222e; --bg:#f6f8fa; }
   * { box-sizing: border-box; }

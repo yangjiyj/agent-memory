@@ -428,7 +428,8 @@
   // ======================================================================
   (function jobs() {
     let root = null; let first = true;
-    const chars = (n) => (n >= 1e8 ? { v: n / 1e8, u: '亿字', d: 1 } : n >= 1e4 ? { v: n / 1e4, u: '万字', d: 0 } : { v: n, u: '字', d: 0 });
+    const chars = (n) => (window.AMI18n?.lang === 'en' ? (n >= 1e9 ? { v: n / 1e9, u: 'B chars', d: 1 } : n >= 1e6 ? { v: n / 1e6, u: 'M chars', d: 1 } : n >= 1e3 ? { v: n / 1e3, u: 'K chars', d: 0 } : { v: n, u: 'chars', d: 0 })
+      : n >= 1e8 ? { v: n / 1e8, u: '亿字', d: 1 } : n >= 1e4 ? { v: n / 1e4, u: '万字', d: 0 } : { v: n, u: '字', d: 0 });
     const num = (v, unit = '', bad = false, d = 0) => `<b class="${bad ? 'bad' : ''}"><span data-cu="${Number(v) || 0}" data-d="${d}">${(Number(v) || 0).toFixed(d)}</span>${unit ? `<small>${h(unit)}</small>` : ''}</b>`;
     const stat = (v, label, opt = {}) => `<div>${num(v, opt.unit, opt.bad, opt.d)}<span>${h(label)}</span></div>`;
     const meta = (rows) => { const r = rows.filter((x) => x[1]); return r.length ? `<div class="adm-meta">${r.map(([l, v]) => `<span>${h(l)}<b>${v}</b></span>`).join('')}</div>` : ''; };

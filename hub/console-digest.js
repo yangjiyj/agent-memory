@@ -142,7 +142,7 @@
       el.innerHTML = '<section class="panel dg-bar"><select class="inp" id="dg-dev" aria-label="设备"></select><select class="inp" id="dg-tool" aria-label="智能体"></select><span class="sp"></span>'
         + '<button class="btn" id="dg-text-btn">摘要原文</button></section>'
         + '<section class="panel dg-stat"><div class="dg-meter" id="dg-meter"></div><div class="dg-nums" id="dg-nums"></div></section>'
-        + '<section class="panel dg-text" id="dg-text" hidden><pre class="mem-body scroll"></pre></section>'
+        + '<section class="panel dg-text" id="dg-text" hidden><pre class="mem-body scroll" data-i18n-skip></pre></section>'
         + '<section class="panel dg-list"><div class="chips" id="dg-chips"></div><div id="dg-body"><div class="empty">读取中…</div></div></section>';
       q('#dg-dev').onchange = (e) => { st.device = e.target.value; st.tool = ''; load(); };
       q('#dg-tool').onchange = (e) => { st.tool = e.target.value; load(); };
