@@ -8,33 +8,26 @@ Entries before 0.10.0 are reconstructed from the git history: the `VERSION` cons
 ## [0.10.0] - 2026-11-24
 
 ### Added
-- Topology: 24-hour time replay, to scrub back through what happened.
-- Topology: device groups, collapsible.
-- Usage insights: memory gaps, the queries that found nothing.
-- Usage insights: cold memories, entries that are never read.
-- Memory edit history, with restore to an earlier version.
-- Save an excerpt of a conversation as a memory.
-- Digest preview page, with pinned, excluded, low-information and duplicate markers.
-- Global search with Ctrl/Cmd+K.
-- Ask my memories: question answering over the library through any OpenAI-compatible API; the API key is write-only and is never returned.
-- Read-only share links with an expiry date, revocable at any time.
-- Docker one-command start: `docker compose --profile demo up` for the demo data, `--profile hub` for a real hub.
+- **Topology**: the heartbeat bar shows reads next to writes (per-hour counts on hover); a 24-hour time replay under the canvas (drag or play, "back to now"; the wall display loops it automatically); devices can be put into groups, shown on one plate and collapsible into a single summary node.
+- **Triage**: *memory gaps* (queries that found nothing in the last 30 days, near-duplicate wordings merged, can be ignored and restored) and *cold memories* (active memories nobody has read since a stated date; it says "still collecting data" until enough days have accumulated).
+- **MCP page**: 7-day latency (median, p95) and failure rate per tool. Usage records now carry `hits`, `ids`, `dur` and `err`; older rows stay readable.
+- **Memory history**: every version with time, author and diff, and restore to any version (adds a new version; native-synced memories cannot be restored).
+- **Save as memory**: select text in a conversation and store it as a memory with a provenance line.
+- **Digest page** (Memory › Digest): preview the digest a given agent on a given device receives, budget use, pin or exclude entries (`state/digest-rules.json`), flags for low-information and duplicate titles.
+- **Global search** (`Ctrl/Cmd+K`) over memories, conversations, projects, devices and pages. The **Ask** tab answers from your memories and conversations through any OpenAI-compatible endpoint (`ask_url`, `ask_model`, `ask_key`; the key is write-only and never returned), with clickable citations, rate limiting and an audit record.
+- **Share links**: `/s/<token>` for a project's timeline or handoff pack, valid for 1, 7 or 30 days, revocable, work-log summaries only (no conversation text); only the token hash is stored. See [docs/share-links.md](docs/share-links.md).
+- **Light theme** (follows the system by default, switch in the top bar) and **English interface** (`中 / EN`, runtime translation in the browser; the hub's API messages stay Chinese).
+- **Docker**: `docker compose --profile demo up` for the demo data, `--profile hub` for a real hub.
 - This changelog.
-- Light theme (with this release).
-- English interface (with this release).
 
 ### Changed
-- Topology heartbeat bar now includes reads, not only writes.
-- Usage records now carry hit counts, latency and errors.
-- MCP page shows latency and failure rate per tool.
-- The console hides projects that the viewer's device is not allowed to see.
+- `hide_projects` now also applies to the console and `/browse/*` (topology, timeline, projects, conversations, memories, todos, handoff, digest preview, search, ask), with totals recomputed. A device that has a hide list can no longer edit hide lists in the console. MCP tools other than `memory_search` / `memory_get` and the device-side `/v1/*` endpoints are unchanged.
+- The authentication gateway sets `TCP_NODELAY`, which saves about 40 ms per request.
 
 ### Performance
-- Static files and API responses are compressed.
-- Assets are served under content-hashed URLs with long-lived caching.
-- HTML pages carry an ETag.
-- Scripts and stylesheets are each merged into a single file.
-- First-screen data is fetched in a single request.
+- Static files and API responses of 1 KB or more are compressed (br, then gzip).
+- `console.html` is rewritten at runtime: adjacent stylesheets and scripts become one content-hashed bundle each (`immutable` caching); the html itself is `no-cache` with an ETag.
+- First-screen data comes from one request (`GET /console/api/boot?page=…`): opening the topology page takes three requests after the html instead of twenty-three.
 
 ## [0.9.3] - 2026-11-23
 

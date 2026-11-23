@@ -32,7 +32,7 @@ import { createShare } from './share.mjs';
 import { sendBody, createStatic } from './perf.mjs';
 
 const run = promisify(execFile);
-const VERSION = '0.9.3';
+const VERSION = '0.10.0';
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.AGENT_MEMORY_CONFIG || '/srv/agent-memory/config.json';
 const CFG = Object.assign(
