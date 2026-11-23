@@ -94,7 +94,7 @@ node /srv/agent-memory/app/server.mjs                          # 或用 deploy/a
 **2. 接设备**：最简单是生成加入码，在每台机器上粘一行：
 
 ```bash
-node /srv/agent-memory/app/server.mjs join-code 7    # 7 天有效，打印 macOS/Linux 和 Windows 的安装命令
+node /srv/agent-memory/app/server.mjs join-code 7    # 7 天内可用来加机器（join-code 0 长期有效），打印 macOS/Linux 和 Windows 的安装命令
 ```
 
 安装脚本会：没有 Node 就从中心下载一份（把 Node 安装包放进 `dist_dir`）→ 用主机名登记 → `setup` 识别并接上本机的智能体 → 装每 10 分钟一次的定时任务（Windows 计划任务 / launchd / systemd 用户定时器）→ 首次同步。

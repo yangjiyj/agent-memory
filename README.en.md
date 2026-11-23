@@ -70,7 +70,7 @@ cp hub/* agent/kb-agent.mjs /srv/agent-memory/app/
 cp config.example.json /srv/agent-memory/config.json
 touch /srv/agent-memory/archive/.am-archive
 export AGENT_MEMORY_CONFIG=/srv/agent-memory/config.json
-node /srv/agent-memory/app/server.mjs join-code 7     # prints one-line installers for macOS/Linux and Windows
+node /srv/agent-memory/app/server.mjs join-code 7     # valid for 7 days (0 = no expiry); prints one-line installers for macOS/Linux and Windows
 node /srv/agent-memory/app/server.mjs                 # or deploy/agent-memory.service
 ```
 
