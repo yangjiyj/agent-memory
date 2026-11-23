@@ -111,9 +111,16 @@ describe('响应压缩', () => {
       assert.equal(r.text, src);
       assert.match(r.headers.vary, /Accept-Encoding/i);
     }
-    const tiny = await raw(hub.port, '/console/console-replay.js', { 'accept-encoding': 'br' });
-    assert.ok(tiny.body.length < 1024);
-    assert.equal(tiny.headers['content-encoding'], undefined);
+    // 小于 1KB 的静态文件不压：临时放一个小文件（各页面脚本现在都超过 1KB）
+    const tinyPath = path.join(HUB_DIR, 'console-zz-tiny-test.js');
+    fs.writeFileSync(tinyPath, '// tiny
+');
+    try {
+      const tiny = await raw(hub.port, '/console/console-zz-tiny-test.js', { 'accept-encoding': 'br' });
+      assert.equal(tiny.status, 200);
+      assert.ok(tiny.body.length < 1024);
+      assert.equal(tiny.headers['content-encoding'], undefined);
+    } finally { fs.rmSync(tinyPath, { force: true }); }
   });
 
   it('已经压缩过的类型（Node 安装包）和流式下载原样传，不压', async () => {

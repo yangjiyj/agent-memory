@@ -2,6 +2,8 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
 import { startHub, GATE, SERVER, TOKENS } from './helpers.mjs';
@@ -114,7 +116,8 @@ describe('前端文件', () => {
   it('回放脚本不再是占位，几个页面脚本语法正确，控制台页引用它们', async () => {
     const hub = await startHub({ tokens: TOKENS, peers: ['my-laptop'] });
     try {
-      const html = (await hub.web('GET', '/console')).text;
+      // 服务端会把相邻的脚本合成带哈希的包，所以引用关系看源文件，单个文件仍能单独取到
+      const html = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'hub', 'console.html'), 'utf8');
       for (const f of ['console-topology.js', 'console-replay.js', 'console-admin.js']) {
         assert.ok(html.includes(`/console/${f}`), f);
         const r = await hub.web('GET', `/console/${f}`);
