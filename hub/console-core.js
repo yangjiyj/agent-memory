@@ -22,6 +22,7 @@
  *                                      opts: { method, body（对象，自动转 JSON 并用 POST）, query（对象，拼到 ? 后面）, ttl（毫秒，GET 结果缓存）}
  *                                      返回值：响应是 JSON 就返回对象，否则（text/plain）返回字符串
  *   Console.go(route, query?)          跳转：'lib'、'lib/abc'、'#/timeline/2026-11-01'、go('lib', { q: '部署' })
+ *   Console.embed                      true = 被嵌在别的页面里（/console?embed=1#/<页面>，大屏用）：不显示侧栏和顶栏，Console.go 会让外层窗口跳到控制台
  *   Console.badge(id, n)               设置侧栏徽标；n 为 0/空 就隐藏
  *   Console.toast(msg, kind)           右下角提示；kind: 'ok' | 'err' | 缺省为普通
  *   Console.overlayHost(el)            悬停浮层和右下角提示默认挂在 body；元素进入全屏后只有它里面的东西看得见，这时把它们搬进去（传 null 搬回 body）
@@ -233,9 +234,18 @@
     const id = ALL.some((x) => x.id === args[0]) ? args[0] : 'overview';
     return { id, args: args.slice(1), arg: args[1] || '', query: Object.fromEntries(new URLSearchParams(q)) };
   }
+  const EMBED = new URLSearchParams(location.search).has('embed');
+  Console.embed = EMBED;
+  if (EMBED) {
+    document.body.classList.add('embed');
+    document.documentElement.style.overflow = 'hidden'; // 高度由外层定，自己不出滚动条
+    // 焦点在嵌入页里时，Esc 交给外层（大屏用它回控制台）；页面自己用掉的 Esc（关抽屉）会 preventDefault
+    addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.defaultPrevented && window.parent !== window) window.parent.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+  }
   Console.go = (route, query) => {
     let h = String(route || 'overview').replace(/^#?\/?/, '');
     if (query && Object.keys(query).length) h += (h.includes('?') ? '&' : '?') + new URLSearchParams(query);
+    if (EMBED && window.top !== window) { window.top.location.href = `/console#/${h}`; return; }
     const next = `#/${h}`;
     if (location.hash === next) dispatch(); else location.hash = next;
   };
@@ -326,7 +336,7 @@
 
   Console.start = async function start() {
     buildShell();
-    stars();
+    if (!EMBED) stars();
     try { await Console.loadData(); } catch (e) { Console.toast(`读取数据失败：${e.message}`, 'err'); }
     readyRes();
     addEventListener('hashchange', dispatch);

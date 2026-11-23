@@ -788,6 +788,34 @@ export function createConvLog(ctx) {
     return out;
   }
 
+  // 近几天每个项目有哪些设备、哪些智能体参与过（项目名取工作日志里写的；一个会话跨几天只算一次），给拓扑页的项目筛选用。
+  // 最近有活动的项目在前。
+  function projectMembers(days = 7) {
+    const by = new Map();
+    for (let i = 0; i < days; i++) {
+      const d = localDay(new Date(Date.now() - i * 86400e3).toISOString());
+      for (const [key, seg] of Object.entries(journal.get(d) || {})) {
+        if (!seg.project) continue;
+        const e = index[key];
+        if (e && AUTO_CWD.test(e.cwd || '')) continue;
+        const device = e?.device || seg.device; const tool = e?.tool || seg.tool; const last = e?.days[d]?.last || seg.last;
+        if (!device || !tool || !last) continue;
+        const p = by.get(seg.project) || { last: '', keys: new Set(), members: new Map() };
+        by.set(seg.project, p);
+        const mk = `${device}\n${tool}`;
+        const m = p.members.get(mk) || { device, tool, keys: new Set(), last: '' };
+        p.members.set(mk, m);
+        p.keys.add(key); m.keys.add(key);
+        if (last > p.last) p.last = last;
+        if (last > m.last) m.last = last;
+      }
+    }
+    return [...by.entries()].map(([name, p]) => ({
+      name, sessions: p.keys.size, last: p.last,
+      members: [...p.members.values()].map((m) => ({ device: m.device, tool: m.tool, sessions: m.keys.size, last: m.last })).sort((a, b) => (a.last < b.last ? 1 : -1)),
+    })).sort((a, b) => (a.last < b.last ? 1 : a.last > b.last ? -1 : a.name.localeCompare(b.name)));
+  }
+
   // 最近有新消息的会话（一个会话一条，时间是它最近一条消息），给拓扑页的事件流用
   function recentSessions(sinceMs) {
     const out = [];
@@ -849,5 +877,5 @@ export function createConvLog(ctx) {
     return out;
   }
 
-  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, recentMessages, recentSessions, readMessages, index: () => index, journal: () => journal, refOf };
+  return { vizData, vizDay, vizExtra, vizGalaxy, vizLive, searchDays, wrapped, append, pending, item, result, timeline, recentSection, search, get, searchData, getData, stats, reportLines, watchProblems, flush, rebuildIndex, mounted, segmentsOf, recentMessages, recentSessions, projectMembers, readMessages, index: () => index, journal: () => journal, refOf };
 }

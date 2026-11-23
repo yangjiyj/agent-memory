@@ -288,3 +288,9 @@ svg text { fill: var(--text-secondary); font-size: 11px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* 嵌进别的页面（/console?embed=1#/<页面>，大屏用）：只留页面本身，背景透明 */
+body.embed { background: transparent; }
+body.embed::before, body.embed #stars, body.embed .side, body.embed .top, body.embed .scrim { display: none; }
+body.embed .main { margin-left: 0; min-height: 0; }
+body.embed .pages { padding: 0; max-width: none; }

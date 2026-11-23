@@ -31,7 +31,7 @@ import { createExtras } from './extras.mjs';
 import { createAdmin } from './admin.mjs';
 
 const run = promisify(execFile);
-const VERSION = '0.9.2';
+const VERSION = '0.9.3';
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.AGENT_MEMORY_CONFIG || '/srv/agent-memory/config.json';
 const CFG = Object.assign(

@@ -136,6 +136,21 @@ describe('控制台接口：身份', () => {
   });
 });
 
+describe('大屏里的拓扑', () => {
+  it('/console?embed=1 照常给外壳；大屏有一屏嵌着拓扑页', async () => {
+    const hub = await startHub({ tokens: TOKENS, peers: ['my-laptop'] });
+    try {
+      const shell = await fetch(`${hub.base}/console?embed=1`, { headers: GATE_HEADERS });
+      assert.equal(shell.status, 200);
+      assert.ok((await shell.text()).includes('console-core.js'));
+      const wall = await (await fetch(`${hub.base}/wall`, { headers: GATE_HEADERS })).text();
+      assert.ok(wall.includes('/console?embed=1#/topology'));
+      const core = await (await fetch(`${hub.base}/console/console-core.js`, { headers: GATE_HEADERS })).text();
+      assert.ok(core.includes('Console.embed'));
+    } finally { await hub.stop(); }
+  });
+});
+
 describe('控制台接口：console_viewer', () => {
   it('没有网关身份时，浏览器按配置的设备算', async () => {
     const hub = await startHub({ tokens: TOKENS, config: { gate_secret: '', console_viewer: 'my-laptop' } });
@@ -670,6 +685,52 @@ describe('控制台接口：拓扑的实时数据', () => {
       for (const bad of ['limit=0', 'limit=101', 'limit=x', 'since=昨天']) assert.equal((await hub.get(`topology/events?${bad}`)).status, 400, bad);
       assert.equal((await hub.post('topology/events', {})).status, 405);
     } finally { await hub.stop(); }
+  });
+
+  it('项目：近 7 天每个项目的参与设备和智能体；事件流可只看一个项目', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'], config: { embed_url: '' } });
+    try {
+      const now = Date.now();
+      const post = (dev, tool, sid, agoMin) => hub.device(dev, '/v1/conv/append', { tool, session_id: sid, title: sid, base: 0, messages: [{ role: 'user', text: `work on ${sid}`, ts: new Date(now - agoMin * 60e3).toISOString() }, { role: 'assistant', text: 'done', ts: new Date(now - agoMin * 60e3 + 1000).toISOString() }] });
+      await post('build-server', 'codex', 'p1', 100);
+      await post('build-server', 'claude-code', 'p2', 110);
+      await post('my-laptop', 'claude-code', 'p3', 120);
+      await post('my-laptop', 'codex', 'p4', 130);
+      await post('my-laptop', 'codex', 'p5', 140); // 不写日志：不属于任何项目
+      await post('build-server', 'codex', 'p6', 9 * 24 * 60); // 9 天前：出了 7 天的范围
+      const pend = (await hub.device('nightly', '/v1/journal/pending?today=1')).json.items;
+      assert.equal(pend.length, 6);
+      const proj = { p1: 'alpha', p2: 'alpha', p3: 'alpha', p4: 'beta', p6: 'gamma' };
+      const items = pend.filter((x) => proj[x.title]).map((x) => ({ key: x.key, date: x.date, summary: `did ${x.title}`, project: proj[x.title], n: x.n }));
+      assert.equal((await hub.device('nightly', '/v1/journal/result', { items })).status, 200);
+
+      const t = (await hub.get('topology')).json;
+      assert.deepEqual(t.projects.map((p) => p.name), ['alpha', 'beta'], '最近有活动的在前，超过 7 天的不列');
+      const a = t.projects[0];
+      assert.deepEqual(Object.keys(a).sort(), ['last', 'members', 'name', 'sessions']);
+      assert.equal(a.sessions, 3);
+      assert.ok(Date.now() - Date.parse(a.last) < 2 * 3600e3);
+      assert.deepEqual(a.members.map((m) => `${m.device}/${m.tool}/${m.sessions}`).sort(), ['build-server/claude-code/1', 'build-server/codex/1', 'my-laptop/claude-code/1']);
+      assert.ok(a.members.every((m) => Date.parse(m.last) > 0));
+      assert.deepEqual(t.projects[1].members.map((m) => `${m.device}/${m.tool}/${m.sessions}`), ['my-laptop/codex/1']);
+
+      // 事件流：对话事件带项目名（没写日志的不带）；?project= 只给这个项目的对话
+      const talk = (await hub.get('topology/events')).json.events.filter((e) => e.kind === 'talk');
+      assert.equal(talk.length, 5);
+      assert.equal(talk.filter((e) => e.project === 'alpha').length, 3);
+      assert.equal(talk.filter((e) => !('project' in e)).length, 1);
+      await hub.rpc('build-server', 'tools/call', { name: 'memory_search', arguments: { query: 'alpha' } });
+      const only = (await hub.get('topology/events?project=alpha')).json.events;
+      assert.equal(only.length, 3);
+      assert.ok(only.every((e) => e.kind === 'talk' && e.project === 'alpha'));
+      assert.deepEqual((await hub.get('topology/events?project=nothing-here')).json.events, []);
+      assert.equal((await hub.get(`topology/events?project=${encodeURIComponent('Bad Name!')}`)).status, 400);
+    } finally { await hub.stop(); }
+  });
+
+  it('项目：没有工作日志时给空数组', async () => {
+    const hub = await startHub({ tokens: ROLES, peers: ['my-laptop'], config: { embed_url: '' } });
+    try { assert.deepEqual((await hub.get('topology')).json.projects, []); } finally { await hub.stop(); }
   });
 
   it('事件流：查询里带的密钥会打码', async () => {

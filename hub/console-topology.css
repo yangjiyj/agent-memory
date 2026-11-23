@@ -4,8 +4,26 @@
 
 :root { --tp-up: 84, 214, 240; --tp-dn: 255, 184, 76; }
 .tp-bar { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; min-height: 30px; }
-.tp-prob { flex: 1; display: flex; flex-wrap: wrap; gap: 8px; }
-.tp-prob[hidden] { display: none; }
+.tp-chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.tp-prob, .tp-pj { display: contents; }
+.tp-prob[hidden], .tp-pj[hidden] { display: none; }
+/* 项目筛选 */
+.tp-pc { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12.5px; color: var(--text-secondary); background: rgba(57, 135, 229, .08); border: 1px solid var(--panel-line); border-radius: 999px; padding: 3px 12px 3px 10px; cursor: pointer; white-space: nowrap; transition: .15s; }
+.tp-pc i { width: 8px; height: 8px; border-radius: 50%; background: var(--pc); box-shadow: 0 0 8px var(--pc); }
+.tp-pc:hover { color: var(--text-primary); border-color: rgba(134, 182, 239, .45); }
+.tp-pc.on { color: #fff; border-color: var(--pc); background: color-mix(in srgb, var(--pc) 22%, transparent); box-shadow: 0 0 16px -4px var(--pc); }
+.tp-n.dim { opacity: .24; filter: saturate(.35); }
+.tp-n.pj { box-shadow: 0 0 0 1px var(--pj), 0 0 26px -6px var(--pj); }
+.tp-e.dim { opacity: .1; }
+.tp-tg.pj { color: var(--text-primary); border-color: var(--pj); box-shadow: 0 0 10px -2px var(--pj); }
+.tp-tg.off { opacity: .35; box-shadow: none; }
+.tp-ev li.none { display: block; line-height: 26px; color: var(--text-muted); }
+.tp-ev li.none:hover { background: none; }
+/* 嵌在大屏里：不要自己的全屏按钮和面板边框 */
+body.embed .tp-fsb { display: none; }
+body.embed .tp-chips { flex-wrap: nowrap; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, #000 94%, transparent); mask-image: linear-gradient(90deg, #000 94%, transparent); }
+body.embed .tp-chip { white-space: nowrap; flex: none; }
+body.embed .tp-panel { border: 0; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; }
 .tp-bar > .tp-lg { margin-left: auto; }
 .tp-chip { font: inherit; font-size: 12.5px; color: #f5b08f; background: rgba(217, 89, 38, .12); border: 1px solid rgba(217, 89, 38, .5); border-radius: 999px; padding: 3px 12px; cursor: pointer; text-align: left;
   box-shadow: 0 0 14px -4px rgba(217, 89, 38, .6); transition: background .15s; }

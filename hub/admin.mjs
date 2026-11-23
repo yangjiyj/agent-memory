@@ -12,7 +12,7 @@
  *   GET  mcp                POST mcp/tool           停用/启用 MCP 工具
  *   GET  jobs               后台工作的最近情况
  *   GET  topology           拓扑页的全部数据（设备、网关、中心、存储、抽取机、向量服务、巡检问题，以及近 24 小时读写流量）
- *   GET  topology/events    拓扑页的事件流：?since=<ISO>&limit=<n，默认 30，最多 100>
+ *   GET  topology/events    拓扑页的事件流：?since=<ISO>&limit=<n，默认 30，最多 100>&project=<项目名，只给这个项目的对话>
  *   GET  settings           POST settings           白名单配置项
  *   GET  conv/search        GET  conv/<ref>         对话存档
  */
@@ -351,6 +351,13 @@ export function createAdmin(ctx) {
       };
     });
 
+    // 近 7 天各项目的参与者，只留还在设备列表里的；最多 12 个项目
+    const known = new Set(list.map((d) => d.name));
+    const projects = conv().projectMembers(7).map((p) => {
+      const members = p.members.filter((m) => known.has(m.device));
+      return { name: p.name, sessions: members.reduce((a, m) => a + m.sessions, 0), last: members[0]?.last || p.last, members };
+    }).filter((p) => p.members.length).slice(0, 12);
+
     const secret = Boolean(CFG.gate_secret);
     return {
       now: nowIso(),
@@ -361,6 +368,7 @@ export function createAdmin(ctx) {
       },
       gate: { enabled: secret, devices: secret ? list.filter((d) => d.identity === 'gateway').length : 0 },
       devices: list,
+      projects,
       storage: { repo: { entries: store.size, last_commit: jb.repo.last_commit }, archive: jb.archive },
       extractors: byRole('extractor', () => extractorLast),
       reporters: byRole('reporter', (name) => lastCall[name] || null),
@@ -414,12 +422,14 @@ export function createAdmin(ctx) {
       limit = Number(q.get('limit'));
       if (!isInt(limit) || limit < 1 || limit > 100) throw bad('limit 必须是 1–100 之间的整数');
     }
+    const project = q.get('project');
+    if (project !== null && !/^[a-z0-9][a-z0-9._-]{0,40}$/.test(project)) throw bad('project 不是合法的项目名');
     const now = Date.now();
     const floor = Math.max(since ?? 0, now - DAY); // 最多回看 24 小时
     const out = [];
     // 从文件尾往前读，够 limit 条就停（合并后的最新 limit 条一定在两个来源各自的最新 limit 条里）；行在文件里按时间追加
     const rows = usageRows();
-    for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {
+    for (let i = rows.length - 1; i >= 0 && out.length < limit && !project; i--) { // 调用记录里没有项目，按项目看时只给对话
       const u = rows[i];
       if (u.ms > now + 60e3) continue;
       if (u.ms <= floor) break;
@@ -428,7 +438,8 @@ export function createAdmin(ctx) {
     }
     // 对话：一个会话一条，时间取它最近一条消息；同一会话之后又有新消息会换一个 id（带着时间）
     for (const s of conv().recentSessions(floor)) {
-      out.push({ id: `c${s.ref}:${Date.parse(s.last)}`, t: s.last, kind: 'talk', device: s.device, tool: s.tool, text: s.project ? `在 ${short(s.project)} 有新对话` : '有新对话' });
+      if (project && s.project !== project) continue;
+      out.push({ id: `c${s.ref}:${Date.parse(s.last)}`, t: s.last, kind: 'talk', device: s.device, tool: s.tool, text: s.project ? `在 ${short(s.project)} 有新对话` : '有新对话', ...(s.project ? { project: s.project } : {}) });
     }
     out.sort((a, b) => Date.parse(a.t) - Date.parse(b.t) || (a.id < b.id ? -1 : 1));
     return { now: nowIso(), events: out.slice(-limit) };

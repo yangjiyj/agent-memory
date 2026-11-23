@@ -32,6 +32,11 @@
   // 事件带
   let evRows = []; let evLast = ''; let evAt = 0; let evBusy = false; let feedSig = ''; let hoverId = null; let pulsing = 0;
   const evSeen = new Set(); const fresh = new Set();
+  // 项目筛选：选中的项目名、它近 24 小时的对话（null = 还没取到）
+  let proj = null; let pjRows = null; let pjBox;
+  const pjOf = () => (proj && D?.projects?.find((p) => p.name === proj)) || null;
+  const pjTools = (name) => { const p = pjOf(); return p ? p.members.filter((m) => m.device === name) : null; };
+  const feedList = () => (proj ? pjRows || [] : evRows);
 
   const fmtN = (n) => Number(n || 0).toLocaleString('zh-CN');
   const fmtK = (n) => (n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n || 0));
@@ -77,7 +82,7 @@
   };
   const sampleBez = (x1, y1, x2, y2, n = 28) => Array.from({ length: n - 1 }, (_, k) => bezAt(x1, y1, x2, y2, (k + 1) / n));
   const fsOn = () => Boolean(box) && (document.fullscreenElement === box || box.classList.contains('tp-fs'));
-  const feedRows = () => (window.innerHeight >= 1000 ? 8 : 6);
+  const feedRows = () => (window.innerHeight >= 1000 ? 8 : Console.embed && window.innerHeight < 720 ? 3 : 6);
   const feedH = () => 34 + feedRows() * 26;
 
   // availH：画布能用的最大高度。设备节点在 30–62 之间压缩高度（低于 44 去掉智能体标签），仍放不下才分两列
@@ -87,7 +92,7 @@
     const viaGate = (d) => gateOn && d.identity === 'gateway';
     const n = devs.length;
     const PAD = 24;
-    const H0 = Math.round(Math.max(500, Math.min(availH, 900)));
+    const H0 = Math.round(Math.max(Console.embed ? 450 : 500, Math.min(availH, 900)));
     const gap = n > 6 ? 7 : 10;
     const nh1 = Math.floor((H0 - 2 * PAD + gap) / Math.max(n, 1)) - gap;
     const two = nh1 < 30;
@@ -259,7 +264,9 @@
   // 标签按宽度放：放不下的折成 +N（中文按 11px、英文按 6px 估）
   const tagW = (t) => [...t].reduce((a, c) => a + (c.charCodeAt(0) > 255 ? 11 : 6), 0) + 18;
   function agentTags(d, room) {
-    const list = d.agents.slice().sort((a, b) => toolOrder(a.tool) - toolOrder(b.tool));
+    const mine = pjTools(d.name); // 选了项目：参与这个项目的智能体排前面并点亮，其余变暗
+    const inPj = (a) => Boolean(mine) && mine.some((m) => m.tool === a.tool);
+    const list = d.agents.slice().sort((a, b) => inPj(b) - inPj(a) || toolOrder(a.tool) - toolOrder(b.tool));
     if (!list.length) return '';
     let used = 0; let shown = 0;
     for (const a of list) {
@@ -268,8 +275,8 @@
       if (used + w + more > room && shown) break;
       used += w; shown++;
     }
-    const tg = (a) => `<span class="tp-tg ${a.live ? 'live' : ''}">${h(Console.tool(a.tool))}</span>`;
-    return list.slice(0, shown).map(tg).join('') + (list.length > shown ? `<span class="tp-tg">+${list.length - shown}</span>` : '');
+    const tg = (a) => `<span class="tp-tg ${a.live ? 'live' : ''}${mine ? (inPj(a) ? ' pj' : ' off') : ''}">${h(Console.tool(a.tool))}</span>`;
+    return list.slice(0, shown).map(tg).join('') + (list.length > shown ? `<span class="tp-tg${mine ? ' off' : ''}">+${list.length - shown}</span>` : '');
   }
   // 24 格心跳条：最旧在前，按这台设备自己的最大值归一，全 0 就是一排暗格
   function hbHtml(f, big) {
@@ -324,6 +331,8 @@
     if (id.startsWith('dev:')) {
       const st = devState(D.devices.find((x) => x.name === id.slice(4)));
       c.push(st); if (n.two) c.push('two'); if (n.h < 44) c.push('compact');
+      const mine = pjTools(id.slice(4));
+      if (mine) c.push(mine.length ? 'pj' : 'dim');
     } else if (id === 'gate' && !D.gate.enabled) c.push('off');
     else if (id === 'ext' && !D.extractors.length) c.push('off');
     else if (id === 'vec' && !D.vectors.enabled) c.push('off');
@@ -363,6 +372,13 @@
 
   // ---------------- 更新（只改变了的部分）----------------
   function update() {
+    // 项目条：近 7 天有活动的项目，点一个只亮参与它的设备和智能体，再点一次取消
+    const pjs = D.projects || [];
+    if (proj && !pjs.some((p) => p.name === proj)) { proj = null; pjRows = null; }
+    const pjHtml = pjs.map((p) => `<button type="button" class="tp-pc${p.name === proj ? ' on' : ''}" aria-pressed="${p.name === proj}" data-p="${h(p.name)}" style="--pc:${h(Console.color(p.name))}"><i></i>${h(p.name)}</button>`).join('');
+    if (pjBox.dataset.h !== pjHtml) { pjBox.innerHTML = pjHtml; pjBox.dataset.h = pjHtml; }
+    pjBox.hidden = !pjs.length;
+    stage.style.setProperty('--pj', proj ? Console.color(proj) : 'transparent');
     const probs = problemsOf();
     for (const id of Object.keys(nodeEl)) {
       const rec = nodeEl[id];
@@ -373,7 +389,8 @@
     const es = edgeStates();
     for (const [id, rec] of Object.entries(edgeEl)) {
       const e = es[id] || { s: 'idle', u: 0, d: 0, w: 0 };
-      const cls = `tp-e ${e.s} u${e.u} d${e.d} w${e.w}${rec.bus ? ' bus' : ''}`;
+      const off = id.startsWith('e:dev:') && pjTools(id.slice(6))?.length === 0;
+      const cls = `tp-e ${e.s} u${e.u} d${e.d} w${e.w}${rec.bus ? ' bus' : ''}${off ? ' dim' : ''}`;
       if (cls !== rec.cls) { rec.g.setAttribute('class', cls); rec.cls = cls; }
     }
     // 顶部的问题条
@@ -392,7 +409,7 @@
     // 画布高度 = 屏幕高度 − 它上面的东西（顶栏、工具条和问题条，按实测）− 下面的东西（事件带、页面底边距）
     const top = box.getBoundingClientRect().top + window.scrollY;
     const bar = box.querySelector('.tp-bar').offsetHeight + 8;
-    const availH = fsOn() ? window.innerHeight - 28 - bar - feedH() - 8 : window.innerHeight - Math.max(top, 0) - bar - 56 - feedH() - 4;
+    const availH = fsOn() ? window.innerHeight - 28 - bar - feedH() - 8 : window.innerHeight - Math.max(top, 0) - bar - (Console.embed ? 0 : 56) - feedH() - 4;
     const lay = layout(Math.max(MIN_W, scroller.clientWidth), availH);
     if (lay.sig !== sig) { LAY = lay; sig = lay.sig; build(); }
     else LAY = lay; // 位置不变，只是换一份最新的描述
@@ -405,7 +422,7 @@
     const c = `rgb(${RGB[LAY.nodes[id].kind]})`;
     if (id.startsWith('dev:')) {
       const d = D.devices.find((x) => x.name === id.slice(4)); const f = flowOf(d);
-      return `<div class="h">${h(nameOf(d))}</div>${row('状态', DEV_TEXT[devState(d)], c)}${row('最近同步', h(ago(d.last_seen)))}${row('接入', h(IDENT[d.identity] || d.identity))}${d.live ? row('最近对话', h(ago(d.last_msg))) : ''}${row('近 24 小时', `<span class="tp-fl">${arrows(f.up_24h, f.down_24h)}</span>`)}`;
+      return `<div class="h">${h(nameOf(d))}</div>${row('状态', DEV_TEXT[devState(d)], c)}${row('最近同步', h(ago(d.last_seen)))}${row('接入', h(IDENT[d.identity] || d.identity))}${d.live ? row('最近对话', h(ago(d.last_msg))) : ''}${row('近 24 小时', `<span class="tp-fl">${arrows(f.up_24h, f.down_24h)}</span>`)}${(pjTools(d.name) || []).length ? row(`${h(proj)} 近 7 天`, `${fmtN(pjTools(d.name).reduce((a, m) => a + m.sessions, 0))} 个会话`, Console.color(proj)) : ''}`;
     }
     const T = {
       gate: () => `<div class="h">认证网关</div>${D.gate.enabled ? row('经网关认出身份', `${fmtN(D.gate.devices)} 台`, c) : row('状态', '未启用', c)}`,
@@ -515,7 +532,7 @@
   }
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !Console.visible('topology')) return;
-    if (drawerId) closeDrawer();
+    if (drawerId) { closeDrawer(); e.preventDefault(); }
     else if (box?.classList.contains('tp-fs')) { box.classList.remove('tp-fs'); onFsChange(); }
   });
   document.addEventListener('mousedown', (e) => { if (drawerId && drawerEl && !drawerEl.contains(e.target) && !e.target.closest('.tp-n, .tp-chip')) closeDrawer(); });
@@ -589,7 +606,7 @@
   }
   // 鼠标悬停某条事件：它走的路径亮着，其余变暗
   function highlight(id) {
-    const ev = evRows.find((e) => e.id === id);
+    const ev = feedList().find((e) => e.id === id);
     const r = ev && routeOf(ev);
     if (!r) return;
     stage.classList.add('hl');
@@ -610,15 +627,36 @@
   }
   function renderFeed() {
     if (!feedEl) return;
-    const rows = evRows.slice(0, feedRows());
-    feedEl.hidden = !rows.length;
-    const sg = rows.map((e) => e.id).join(',');
+    const rows = feedList().slice(0, feedRows());
+    feedEl.hidden = !rows.length && !proj;
+    const sg = `${proj || ''}|${proj && !pjRows ? '…' : ''}|${rows.map((e) => e.id).join(',')}`;
     const ul = feedEl.querySelector('ul');
-    if (sg !== feedSig) {
+    if (sg !== feedSig && proj && !rows.length) {
+      ul.innerHTML = `<li class="none">${pjRows ? '近 24 小时没有新对话' : '读取中…'}</li>`;
+      feedSig = sg;
+    } else if (sg !== feedSig) {
       ul.innerHTML = rows.map((e) => `<li data-id="${h(e.id)}" class="${fresh.has(e.id) ? 'new' : ''}"><i style="background:rgb(${EV_RGB[e.kind]})"></i><time data-t="${h(e.t)}">${h(date.ago(e.t))}</time><b>${h(evWho(e))}</b><span class="ag">${NOAGENT.includes(e.tool) || !e.tool ? '' : h(Console.tool(e.tool))}</span><span class="tx">${h(e.text)}</span></li>`).join('');
       feedSig = sg;
       fresh.clear();
     } else ul.querySelectorAll('time').forEach((t) => { t.textContent = date.ago(t.dataset.t); });
+  }
+  // 选中项目近 24 小时的对话（事件带在筛选时只显示这些）
+  async function loadPj() {
+    const p = proj;
+    if (!p) return;
+    try {
+      const r = await Console.api('/console/api/topology/events', { query: { project: p, limit: 12 } });
+      if (proj !== p) return;
+      pjRows = r.events.slice().reverse();
+    } catch (e) { if (proj === p && !pjRows) pjRows = []; }
+    renderFeed();
+    if (hoverId && !feedList().some((e) => e.id === hoverId)) { hoverId = null; unhighlight(); }
+  }
+  function pickProj(name) {
+    proj = proj === name ? null : name;
+    pjRows = null; hoverId = null; unhighlight(); tip.hide();
+    update();
+    loadPj();
   }
   async function pollEvents() {
     if (evBusy || !D) return;
@@ -633,13 +671,14 @@
       if (evSeen.size > 600) { const keep = [...evSeen].slice(-300); evSeen.clear(); keep.forEach((x) => evSeen.add(x)); }
       if (!news.length) { renderFeed(); return; }
       evRows = [...news.slice().reverse(), ...evRows].slice(0, 12);
+      if (proj && news.some((e) => e.project === proj)) loadPj();
       if (!first && !catchUp && !RM.matches) for (const e of news) fresh.add(e.id);
       renderFeed();
-      if (hoverId && !evRows.some((e) => e.id === hoverId)) { hoverId = null; unhighlight(); }
+      if (hoverId && !feedList().some((e) => e.id === hoverId)) { hoverId = null; unhighlight(); }
       if (!first) load(); // 有新事件：节点上的"最近活动"、流量数字也跟着刷新，不等 30 秒那一轮
       if (!first && !catchUp) {
         let n = 0;
-        news.slice(-5).forEach((e, i) => {
+        news.filter((e) => !proj || e.project === proj).slice(-5).forEach((e, i) => {
           if (n >= 5 || pulsing >= 5) return;
           setTimeout(() => { if (pulsing < 5) playPulse(e); }, i * 160);
           n++;
@@ -672,9 +711,10 @@
     title: '拓扑',
     mount(el) {
       root = el;
-      el.innerHTML = `<div class="tp"><div class="tp-bar"><div class="tp-prob" hidden></div><span class="tp-lg"><i class="up"></i>写入<i class="dn"></i>读取</span><button type="button" class="tp-fsb" aria-pressed="false">${FS_ICON}</button></div>
+      el.innerHTML = `<div class="tp"><div class="tp-bar"><div class="tp-chips"><div class="tp-prob" hidden></div><div class="tp-pj" hidden></div></div><span class="tp-lg"><i class="up"></i>写入<i class="dn"></i>读取</span><button type="button" class="tp-fsb" aria-pressed="false">${FS_ICON}</button></div>
         <section class="panel tp-panel"><div class="tp-scroll"><div class="tp-stage"></div></div><div class="tp-ev" hidden><h4>刚刚发生</h4><ul></ul></div></section></div>`;
-      box = el.querySelector('.tp'); probBox = el.querySelector('.tp-prob'); scroller = el.querySelector('.tp-scroll'); stage = el.querySelector('.tp-stage'); feedEl = el.querySelector('.tp-ev'); fsBtn = el.querySelector('.tp-fsb');
+      box = el.querySelector('.tp'); probBox = el.querySelector('.tp-prob'); scroller = el.querySelector('.tp-scroll'); stage = el.querySelector('.tp-stage'); feedEl = el.querySelector('.tp-ev'); fsBtn = el.querySelector('.tp-fsb'); pjBox = el.querySelector('.tp-pj');
+      pjBox.addEventListener('click', (e) => { const b = e.target.closest('.tp-pc'); if (b) pickProj(b.dataset.p); });
       fsBtn.title = '全屏'; fsBtn.setAttribute('aria-label', '全屏');
       stage.innerHTML = '<div class="empty">读取中…</div>';
       fsBtn.addEventListener('click', toggleFs);

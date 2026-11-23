@@ -153,6 +153,9 @@
   body.cruise .feed { max-height: 160px; }
   body.cruise .cards { max-height: calc(100vh - 560px); min-height: 160px; }
   body.cruise .ms { max-height: calc(100vh - 420px); }
+  #topo { display: block; width: 100%; height: 700px; border: 0; background: transparent; color-scheme: dark; }
+  body.cruise #topo { height: calc(100vh - 216px); min-height: 610px; }
+  body.cruise.on-topo .kpis { display: none; } /* 拓扑那一屏占满，中心节点上已经有这些数 */
 </style>
 </head>
 <body class="cruise">
@@ -187,6 +190,13 @@
         <div class="feed" id="feed"></div>
       </section>
     </div>
+  </div>
+
+  <div class="scene">
+    <section class="panel">
+      <div class="ph"><h2>实时拓扑</h2></div>
+      <iframe id="topo" title="实时拓扑"></iframe>
+    </section>
   </div>
 
   <div class="scene">
@@ -941,9 +951,17 @@ const DWELL = 14000;
 let sceneIdx = 0; let cruiseTimer = null;
 $('dots').innerHTML = SCENES.map((_, i) => `<button data-i="${i}" aria-label="第 ${i + 1} 屏"></button>`).join('');
 $('dots').querySelectorAll('button').forEach((b) => { b.onclick = () => { setCruise(true, +b.dataset.i); }; });
+// 拓扑那一屏嵌的是控制台的拓扑页：第一次轮到它才加载；之后每次露出来让它按当前尺寸重排
+const TOPO = $('topo');
+function wakeTopo() {
+  if (!TOPO.getAttribute('src')) TOPO.src = '/console?embed=1#/topology';
+  else TOPO.contentWindow?.dispatchEvent(new Event('resize'));
+}
 function showScene(i) {
   sceneIdx = i;
   SCENES.forEach((s, k) => s.classList.toggle('on', k === i));
+  document.body.classList.toggle('on-topo', SCENES[i].contains(TOPO));
+  if (SCENES[i].contains(TOPO)) wakeTopo();
   $('dots').querySelectorAll('button').forEach((b, k) => b.classList.toggle('on', k === i));
   requestAnimationFrame(() => { FITS.forEach((f) => f()); if (DATA) renderAll(); });
 }
@@ -954,7 +972,7 @@ function setCruise(on, at) {
   if (on) {
     showScene(at ?? sceneIdx);
     cruiseTimer = setInterval(() => { const n = (sceneIdx + 1) % SCENES.length; showScene(n); if (n === 0) refreshAll(); }, DWELL);
-  } else requestAnimationFrame(() => { FITS.forEach((f) => f()); if (DATA) renderAll(); });
+  } else { wakeTopo(); requestAnimationFrame(() => { FITS.forEach((f) => f()); if (DATA) renderAll(); }); }
 }
 $('cruise').onclick = () => setCruise(!document.body.classList.contains('cruise'));
 $('fs').onclick = () => { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.().catch(() => {}); };
