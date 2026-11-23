@@ -62,6 +62,31 @@ AGENT_MEMORY_CONFIG=/tmp/am-demo/config.json node hub/server.mjs
 # open http://127.0.0.1:8790/ in a browser
 ```
 
+## Docker
+
+The image contains only the hub (`hub/`, plus the device agent script that join codes install), is based on `node:20-alpine`, runs as a non-root user and listens on 8790. Config, repo, state and the conversation archive live in the volume `/data`.
+
+**Demo** (fictional data, no devices needed):
+
+```bash
+docker compose --profile demo up        # first run builds the image and generates demo data; then open http://127.0.0.1:8790/
+docker compose --profile demo down -v   # clean up, demo data included
+```
+
+Demo mode has no authentication (it relies on `console_viewer`), so the port is bound to `127.0.0.1` only. **Do not change that to a public address and do not put it on the internet.**
+
+**Real hub**:
+
+```bash
+export AM_PUBLIC_URL=http://hub.example:8790       # the address devices use to reach the hub
+docker compose --profile hub up -d                 # data in the volume am-data; the first start writes /data/config.json
+docker compose exec hub node hub/server.mjs add-device my-laptop   # prints a device token; use join-code 7 to enrol many machines
+```
+
+- The console only opens for a recognised identity: put the identity gateway in front (`gateway/am-gate.py`; set `AM_GATE_SECRET` to match before starting), or add `"console_viewer": "my-laptop"` to `/data/config.json` and run `docker compose restart hub` (private addresses only).
+- `AM_PUBLIC_URL`, `AM_GATE_SECRET` and `AM_CONSOLE_VIEWER` are read only when the config is first generated; after that edit it with `docker compose exec hub vi /data/config.json`. With your own config, point the paths at `/data/…` and set `listen` to `0.0.0.0`.
+- `AM_PORT` changes the host port and `AM_BIND` the bind address (default `0.0.0.0`); if you use a host directory instead of the volume, it must be owned by uid 1000.
+
 ## Quick start
 
 ```bash

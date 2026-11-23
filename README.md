@@ -77,6 +77,31 @@ AGENT_MEMORY_CONFIG=/tmp/am-demo/config.json node hub/server.mjs
 # 浏览器打开 http://127.0.0.1:8790/
 ```
 
+## Docker 一键启动
+
+镜像只带中心（`hub/`，加上加入码安装用的设备端脚本），基于 `node:20-alpine`，非 root 运行，端口 8790；配置、仓库、状态、对话存档都在卷 `/data`。
+
+**演示**（虚构数据，不用接设备）：
+
+```bash
+docker compose --profile demo up        # 首次会构建镜像并生成演示数据，然后打开 http://127.0.0.1:8790/
+docker compose --profile demo down -v   # 清理，连演示数据一起删
+```
+
+演示模式没有认证（靠 `console_viewer`），端口固定只绑 `127.0.0.1`。**不要改成对外地址，不要放到公网。**
+
+**正式**：
+
+```bash
+export AM_PUBLIC_URL=http://hub.example:8790       # 设备访问中心用的地址
+docker compose --profile hub up -d                 # 数据在卷 am-data，首次启动在卷里生成 /data/config.json
+docker compose exec hub node hub/server.mjs add-device my-laptop   # 打印设备令牌；一次接多台用 join-code 7
+```
+
+- 控制台要认出身份才能打开：前面放认证网关（`gateway/am-gate.py`，启动前设 `AM_GATE_SECRET` 和网关一致），或在 `/data/config.json` 里写 `"console_viewer": "my-laptop"` 再 `docker compose restart hub`（只在不对外的地址上用）。
+- `AM_PUBLIC_URL`、`AM_GATE_SECRET`、`AM_CONSOLE_VIEWER` 只在首次生成配置时读，之后用 `docker compose exec hub vi /data/config.json` 改；带自己的配置时，路径要指向 `/data/…`，`listen` 写 `0.0.0.0`。
+- `AM_PORT` 改宿主机端口，`AM_BIND` 改监听地址（默认 `0.0.0.0`）；用宿主机目录代替卷时，目录要归 uid 1000。
+
 ## 快速开始
 
 **1. 起中心**（任意一台 Linux，Node ≥ 18、git）：

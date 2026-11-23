@@ -1,0 +1,24 @@
+# 构建上下文里只留镜像要用的文件（Dockerfile 里是逐个 COPY 的，这里再挡一层，也让上下文小）
+.git
+**/node_modules
+**/.DS_Store
+**/*.log
+
+# 运行时数据和本地配置，绝不能进镜像
+state
+repo
+archive
+tokens.json
+config.json
+.env
+
+# 镜像不需要的内容
+test
+docs
+deploy
+gateway
+worker
+*.md
+Dockerfile
+docker-compose*.yml
+.dockerignore
