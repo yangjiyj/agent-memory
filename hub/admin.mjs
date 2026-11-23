@@ -9,6 +9,7 @@
  *   POST join-code          生成加入码
  *   GET  mcp                POST mcp/tool           停用/启用 MCP 工具
  *   GET  jobs               后台工作的最近情况
+ *   GET  topology           拓扑页的全部数据（设备、网关、中心、存储、抽取机、向量服务、巡检问题）
  *   GET  settings           POST settings           白名单配置项
  *   GET  conv/search        GET  conv/<ref>         对话存档
  */
@@ -91,7 +92,7 @@ const SETTINGS = {
 export function createAdmin(ctx) {
   const {
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
-    heartbeatFile, agentsOverview, watch, git, tools, store, conv, extras, pipe, deviceSet, newJoinCode,
+    heartbeatFile, agentsOverview, watch, git, tools, store, conv, extras, pipe, deviceSet, newJoinCode, VERSION, agentVersion,
   } = ctx;
 
   // ---- 配置读写：先写临时文件再改名，原文件留一份 .bak，并当场更新内存里的 CFG ----
@@ -247,6 +248,69 @@ export function createAdmin(ctx) {
     };
   }
 
+  // ---- topology ----
+  // 一次给齐拓扑页要的数据：设备和任务状态直接复用 devices()、jobs()，这里只补中心、网关、令牌角色和浏览者。
+  const LIVE_MS = 20 * 60e3; // 20 分钟内有新对话算"正在干活"
+  const hotAgent = (a) => a.sessions || a.memories || a.calls;
+
+  async function topology(viewer, req) {
+    const dv = devices();
+    const jb = await jobs();
+    const stale = Object.fromEntries(jb.sync.devices.map((d) => [d.name, d.stale]));
+    const hb = readJSON(heartbeatFile(), {});
+    const now = Date.now();
+
+    const list = dv.devices.filter((d) => d.role === 'device').map((d) => {
+      const agents = Object.keys({ ...d.wiring, ...d.agents }).filter((k) => {
+        if (k === 'cli' || k === 'test') return false;
+        const a = d.agents[k];
+        return d.wiring[k] || (a && hotAgent(a));
+      }).map((k) => {
+        const last = d.agents[k]?.lastMsg || null;
+        return { tool: k, last_msg: last, live: Boolean(last) && now - Date.parse(last) < LIVE_MS };
+      });
+      const lastMsg = agents.map((a) => a.last_msg).filter(Boolean).sort().pop() || null;
+      return {
+        name: d.name, label: d.label, identity: d.identity, version: d.version, last_seen: d.last_seen,
+        stale: Boolean(stale[d.name]), paused: d.policy.paused, readonly: d.policy.readonly,
+        live: agents.some((a) => a.live), last_msg: lastMsg, agents,
+      };
+    });
+
+    // 调用次数和各令牌最近一次调用：一遍扫完 usage
+    const since7 = now - 7 * DAY;
+    let calls7 = 0;
+    const lastCall = {};
+    for (const u of readJsonl(usageFile(), 0)) {
+      if (u.op.startsWith('tool:') || u.op.startsWith('cli:')) {
+        if (Date.parse(u.t) >= since7) calls7++;
+        if (!lastCall[u.device] || u.t > lastCall[u.device]) lastCall[u.device] = u.t;
+      }
+    }
+    // 抽取机和报表的令牌不发心跳：没有心跳时，抽取机看最近一次抽取/写日志，报表看最近一次调用
+    const extractorLast = [jb.extract.last_processed, jb.journal.last_result].filter(Boolean).sort().pop() || null;
+    const byRole = (role, fallback) => Object.entries(loadTokens().devices || {}).filter(([, d]) => d.role === role)
+      .map(([name]) => ({ name, label: (CFG.device_labels || {})[name] || '', last_active: hb[name]?.last_seen || fallback(name) }));
+
+    const secret = Boolean(CFG.gate_secret);
+    return {
+      now: nowIso(),
+      hub: {
+        version: VERSION, agent_version: agentVersion(), public_url: CFG.public_url || '', calls_7d: calls7,
+        memories: [...store.values()].filter((e) => e.meta.state === 'active').length,
+      },
+      gate: { enabled: secret, devices: secret ? list.filter((d) => d.identity === 'gateway').length : 0 },
+      devices: list,
+      storage: { repo: { entries: store.size, last_commit: jb.repo.last_commit }, archive: jb.archive },
+      extractors: byRole('extractor', () => extractorLast),
+      reporters: byRole('reporter', (name) => lastCall[name] || null),
+      pending: { sessions: jb.extract.pending, errors: jb.extract.error, journal: jb.journal.pending, proposed: jb.extract.proposed },
+      vectors: jb.vectors,
+      problems: jb.watch.problems,
+      viewer: { device: viewer, via: secret && req.headers['x-am-gate'] === CFG.gate_secret ? 'gateway' : 'config' },
+    };
+  }
+
   // ---- settings ----
   const settingsView = () => ({
     settings: Object.fromEntries(Object.keys(SETTINGS).map((k) => [k, CFG[k] === undefined ? null : CFG[k]])),
@@ -334,6 +398,7 @@ export function createAdmin(ctx) {
       if (sub === 'mcp') { only('GET'); return send(res, 200, mcp()); }
       if (sub === 'mcp/tool') { only('POST'); return send(res, 200, setTool(await readBody(req), viewer)); }
       if (sub === 'jobs') { only('GET'); return send(res, 200, await jobs()); }
+      if (sub === 'topology') { only('GET'); return send(res, 200, await topology(viewer, req)); }
       if (sub === 'settings') {
         if (method === 'GET') return send(res, 200, settingsView());
         only('POST');

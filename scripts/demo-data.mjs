@@ -636,6 +636,7 @@ async function main() {
     repo: p('repo'), state: p('state'), tokens: p('tokens.json'), cards_dir: p('cards'), archive_dir: p('archive'),
     auto_register_deny: [], disabled_tools: ['kb_map'], auto_approve_days: 365, stale_hours: 3, digest_budget: 13800,
     console_viewer: 'desktop',
+    gate_secret: 'demo-gate-secret', // 演示用：让拓扑页里的认证网关是启用状态（真实部署里这个值要自己生成）
     device_labels: Object.fromEntries(DEVICES.map((d) => [d.name, d.label])),
     graph_entities: { machine: DEVICES.map((d) => d.name), site: ['lakeside-mall', 'harbor-depot'] },
   };

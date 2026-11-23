@@ -96,7 +96,8 @@ async function startHub(opts = {}) {
 }
 
 const TOKENS = { 'my-laptop': { token: 'tok-laptop-secret-value' }, 'build-server': { token: 'tok-build-secret-value' } };
-const ENDPOINTS = [['GET', 'devices'], ['POST', 'devices/build-server'], ['POST', 'join-code'], ['GET', 'mcp'], ['POST', 'mcp/tool'], ['GET', 'jobs'], ['GET', 'settings'], ['POST', 'settings'], ['GET', 'conv/search?q=x'], ['GET', 'conv/abcdef12']];
+const TOKEN_HASHES = (hub) => Object.values(hub.read('tokens.json').devices).map((v) => v.sha256);
+const ENDPOINTS = [['GET', 'devices'], ['POST', 'devices/build-server'], ['POST', 'join-code'], ['GET', 'mcp'], ['POST', 'mcp/tool'], ['GET', 'jobs'], ['GET', 'topology'], ['GET', 'settings'], ['POST', 'settings'], ['GET', 'conv/search?q=x'], ['GET', 'conv/abcdef12']];
 
 describe('控制台接口：身份', () => {
   let hub;
@@ -393,6 +394,112 @@ describe('控制台接口：任务状态', () => {
       assert.match(r.json.repo.last_commit.subject, /./);
       assert.ok(Date.parse(r.json.repo.last_commit.time) > 0);
     } finally { await hub.stop(); }
+  });
+});
+
+describe('控制台接口：拓扑', () => {
+  const KEYS = ['now', 'hub', 'gate', 'devices', 'storage', 'extractors', 'reporters', 'pending', 'vectors', 'problems', 'viewer'];
+
+  it('数据为空（没有网关、没挂存档盘、只有一台设备）也不崩，各块都在', async () => {
+    const hub = await startHub({ archive: false, config: { gate_secret: '', console_viewer: 'my-laptop' }, tokens: { 'my-laptop': { token: 'tok-x-secret-value' } } });
+    try {
+      const r = await hub.get('topology', {});
+      assert.equal(r.status, 200);
+      for (const k of KEYS) assert.ok(k in r.json, k);
+      assert.equal(r.json.gate.enabled, false);
+      assert.equal(r.json.gate.devices, 0);
+      assert.equal(r.json.hub.memories, 0);
+      assert.equal(r.json.hub.calls_7d, 0);
+      assert.match(r.json.hub.version, /^\d+\.\d+\.\d+$/);
+      assert.equal(r.json.devices.length, 1);
+      assert.equal(r.json.devices[0].name, 'my-laptop');
+      assert.equal(r.json.devices[0].live, false);
+      assert.deepEqual(r.json.devices[0].agents, []);
+      assert.equal(r.json.storage.archive.mounted, false);
+      assert.deepEqual(r.json.extractors, []);
+      assert.deepEqual(r.json.reporters, []);
+      assert.equal(r.json.vectors.enabled, false);
+      assert.equal(r.json.viewer.device, 'my-laptop');
+      assert.equal(r.json.viewer.via, 'config');
+      assert.ok(Array.isArray(r.json.problems));
+    } finally { await hub.stop(); }
+  });
+
+  it('配置了网关：enabled 为真，经网关认出的设备算进数量，浏览者按网关身份', async () => {
+    const hub = await startHub({ tokens: TOKENS, peers: ['my-laptop'] });
+    try {
+      const r = await hub.get('topology');
+      assert.equal(r.status, 200);
+      assert.equal(r.json.gate.enabled, true);
+      assert.equal(r.json.gate.devices, 1);
+      const by = Object.fromEntries(r.json.devices.map((d) => [d.name, d]));
+      assert.equal(by['my-laptop'].identity, 'gateway');
+      assert.equal(by['build-server'].identity, 'token');
+      assert.equal(r.json.viewer.device, 'my-laptop');
+      assert.equal(r.json.viewer.via, 'gateway');
+    } finally { await hub.stop(); }
+  });
+
+  it('没配网关：设备都不算经网关接入', async () => {
+    const hub = await startHub({ tokens: TOKENS, config: { gate_secret: '', console_viewer: 'my-laptop' } });
+    try {
+      const r = await hub.get('topology', {});
+      assert.equal(r.json.gate.enabled, false);
+      assert.equal(r.json.gate.devices, 0);
+    } finally { await hub.stop(); }
+  });
+
+  it('超时设备标成超时，刚同步的不是；暂停的不算超时；抽取机和报表单列', async () => {
+    const tokens = { ...TOKENS, 'old-box': { token: 'tok-old-secret-value' }, nightly: { token: 'tok-ext-secret-value', role: 'extractor' }, daily: { token: 'tok-rep-secret-value', role: 'reporter' } };
+    const hub = await startHub({ tokens, peers: ['my-laptop'] });
+    try {
+      await hub.device('build-server', '/v1/heartbeat', { agent_version: '0.9.1' });
+      assert.equal((await hub.post('devices/old-box', { paused: true })).status, 200);
+      const r = await hub.get('topology');
+      const by = Object.fromEntries(r.json.devices.map((d) => [d.name, d]));
+      assert.deepEqual(Object.keys(by).sort(), ['build-server', 'my-laptop', 'old-box']);
+      assert.equal(by['my-laptop'].stale, true);
+      assert.equal(by['my-laptop'].last_seen, null);
+      assert.equal(by['build-server'].stale, false);
+      assert.ok(by['build-server'].last_seen);
+      assert.equal(by['old-box'].paused, true);
+      assert.equal(by['old-box'].stale, false);
+      assert.deepEqual(r.json.extractors.map((x) => x.name), ['nightly']);
+      assert.deepEqual(r.json.reporters.map((x) => x.name), ['daily']);
+      assert.ok(r.json.problems.some((p) => p.key === 'stale:my-laptop'));
+    } finally { await hub.stop(); }
+  });
+
+  it('有会话和记忆时：正在干活、智能体、条数、存档会话数', async () => {
+    const hub = await startHub({ tokens: TOKENS, peers: ['my-laptop'], config: { embed_url: '' } });
+    try {
+      await hub.device('build-server', '/v1/heartbeat', { agent_version: '0.9.1' });
+      await hub.device('build-server', '/v1/conv/append', { tool: 'codex', session_id: 'x1', base: 0, messages: [{ role: 'user', text: 'hello there', ts: new Date().toISOString() }] });
+      await hub.device('build-server', '/v1/remember', { type: 'fact', title: 'a fact', body: 'b' });
+      const r = await hub.get('topology');
+      const d = r.json.devices.find((x) => x.name === 'build-server');
+      assert.equal(d.live, true);
+      assert.ok(d.agents.some((a) => a.tool === 'codex'));
+      assert.equal(r.json.devices.find((x) => x.name === 'my-laptop').live, false);
+      assert.equal(r.json.hub.memories, 1);
+      assert.equal(r.json.storage.archive.mounted, true);
+      assert.equal(r.json.storage.archive.sessions, 1);
+      assert.ok(Date.parse(r.json.storage.repo.last_commit.time) > 0);
+    } finally { await hub.stop(); }
+  });
+
+  it('不泄露网关暗号、令牌和令牌哈希', async () => {
+    const hub = await startHub({ tokens: { ...TOKENS, nightly: { token: 'tok-ext-secret-value', role: 'extractor' } }, peers: ['my-laptop'] });
+    try {
+      const r = await hub.get('topology');
+      assert.equal(r.status, 200);
+      for (const bad of [GATE, 'gate_secret', 'tok-', 'sha256', hub.dir, ...TOKEN_HASHES(hub)]) assert.ok(!r.text.includes(bad), `不应出现 ${bad}`);
+    } finally { await hub.stop(); }
+  });
+
+  it('只支持 GET', async () => {
+    const hub = await startHub({ tokens: TOKENS, peers: ['my-laptop'] });
+    try { assert.equal((await hub.post('topology', {})).status, 405); } finally { await hub.stop(); }
   });
 });
 

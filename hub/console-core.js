@@ -10,7 +10,7 @@
  *     hide() { … },                  // 可选。离开页面时调用，停掉动画循环
  *     resize() { … },                // 可选。窗口尺寸变化（防抖后）时只对当前可见页调用，按 clientWidth 画图的页面在这里重画
  *   });
- *   · 页面 id 固定为侧栏里那 14 个：overview lib triage graph timeline projects todos convs devices agents mcp audit jobs settings
+ *   · 页面 id 固定为侧栏里那 15 个：overview lib triage graph timeline projects todos convs topology devices agents mcp audit jobs settings
  *   · 页面隐藏时 clientWidth 为 0：所有按容器宽度画图的代码都要放在 show/resize 里画，不要在脚本加载时画。
  *   · 同一个文档里所有页面共用，元素 id 要全局唯一；在 el 里用 el.querySelector 取节点最稳。
  *   · params：{ id, args: ['2026-11-01'], arg: '2026-11-01', query: { q: '…' } }，来自 #/<id>/<arg…>?<query>
@@ -46,7 +46,7 @@
   'use strict';
   const Console = (window.Console = {});
 
-  // ---------------- 导航表：14 个页面全部在这里，没实现的页面会显示"建设中" ----------------
+  // ---------------- 导航表：15 个页面全部在这里，没实现的页面会显示"建设中" ----------------
   const I = (s) => `<svg viewBox="0 0 24 24" aria-hidden="true">${s}</svg>`;
   const NAV = [
     { id: 'overview', title: '概览', icon: I('<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>') },
@@ -62,6 +62,7 @@
       { id: 'convs', title: '对话存档', icon: I('<path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z"/>') },
     ] },
     { group: '接入', items: [
+      { id: 'topology', title: '拓扑', icon: I('<circle cx="12" cy="12" r="3"/><circle cx="4.5" cy="6" r="1.8"/><circle cx="4.5" cy="18" r="1.8"/><circle cx="19.5" cy="6" r="1.8"/><circle cx="19.5" cy="18" r="1.8"/><path d="M6 7l4.2 3.6M6 17l4.2-3.6M18 7l-4.2 3.6M18 17l-4.2-3.6"/>') },
       { id: 'devices', title: '设备', icon: I('<rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8 20h8M12 16.5V20"/>') },
       { id: 'agents', title: '智能体', icon: I('<rect x="5" y="8" width="14" height="10" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/>') },
       { id: 'mcp', title: 'MCP', icon: I('<path d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0zM12 17v4"/>') },

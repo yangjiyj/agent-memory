@@ -31,7 +31,7 @@ import { createExtras } from './extras.mjs';
 import { createAdmin } from './admin.mjs';
 
 const run = promisify(execFile);
-const VERSION = '0.9.0';
+const VERSION = '0.9.1';
 const APP_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = process.env.AGENT_MEMORY_CONFIG || '/srv/agent-memory/config.json';
 const CFG = Object.assign(
@@ -1702,7 +1702,7 @@ async function main() {
   extras = createExtras({ CFG, store, conv, nowIso, readJSON, appendJsonl, serial, writeEntry, commit, byUpdated, ageDays, TYPE_LABEL, UserError, readJsonl, usageFile, findSecret, redactSecrets });
   admin = createAdmin({
     CFG, CONFIG_PATH, readJSON, readJsonl, usageFile, logUsage, nowIso, readBody, send, UserError, browseViewer, loadTokens, peersFile,
-    heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode,
+    heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode, VERSION, agentVersion,
     tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
   });
   const vecTick = () => extras.reindex().then((r) => { if (r.indexed) console.log(`向量：新建 ${r.indexed} 条，共 ${r.total} 条`); }).catch((e) => console.error('向量索引失败：', e.message));
