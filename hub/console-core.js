@@ -21,6 +21,8 @@
  *   Console.api(path, opts)            GET/POST JSON；出错抛 Error（message 是服务端给的中文原因，e.status 是状态码）
  *                                      opts: { method, body（对象，自动转 JSON 并用 POST）, query（对象，拼到 ? 后面）, ttl（毫秒，GET 结果缓存）}
  *                                      返回值：响应是 JSON 就返回对象，否则（text/plain）返回字符串
+ *                                      首屏：服务端 /console/api/boot 已经把启动和各页首屏要的 GET 一并取好（清单在 perf.mjs 的 BOOT_SHELL/BOOT_PAGES），
+ *                                      URL 命中就直接用、不发请求；页面想进清单就在那里加一行，不加照常单独取
  *   Console.go(route, query?)          跳转：'lib'、'lib/abc'、'#/timeline/2026-11-01'、go('lib', { q: '部署' })
  *   Console.embed                      true = 被嵌在别的页面里（/console?embed=1#/<页面>，大屏用）：不显示侧栏和顶栏，Console.go 会让外层窗口跳到控制台
  *   Console.badge(id, n)               设置侧栏徽标；n 为 0/空 就隐藏
@@ -162,6 +164,23 @@
 
   // ---------------- 接口 ----------------
   const cache = new Map();
+  // 首屏汇总：服务端把外壳启动和当前页首屏要的 GET 一次打包（/console/api/boot，console.html 里的内联脚本已经提前发出请求），
+  // 这里按 URL 存下来，10 秒内 Console.api 遇到同样的 GET 直接用，不再发请求（URL 要和 api() 拼出来的完全一致）；任何写操作都让它作废
+  const primed = new Map(); const PRIME_MS = 10e3;
+  const takePrimed = (url) => {
+    const p = primed.get(url);
+    if (!p) return null;
+    if (Date.now() - p.t > PRIME_MS) { primed.delete(url); return null; }
+    if (!p.used) { p.used = true; return p; }
+    return { d: typeof structuredClone === 'function' ? structuredClone(p.d) : JSON.parse(JSON.stringify(p.d)) }; // 第二次起给副本，页面改它不会串
+  };
+  async function boot() {
+    try {
+      const r = await (window.__amBoot || fetch(`/console/api/boot?page=${encodeURIComponent(parse(location.hash).id)}`).then((x) => (x.ok ? x.json() : null)));
+      const t = Date.now();
+      for (const [u, d] of Object.entries(r?.prime || {})) primed.set(u, { t, d, used: false });
+    } catch { /* 取不到就算了，各处自己取 */ }
+  }
   Console.api = async function api(path, opts = {}) {
     let url = path;
     if (opts.query) {
@@ -177,7 +196,8 @@
       const hit = cache.get(url);
       if (hit && Date.now() - hit.t < opts.ttl) return hit.p;
     }
-    const run = (async () => {
+    const hit = init.method === 'GET' ? takePrimed(url) : (primed.clear(), null);
+    const run = hit ? Promise.resolve(hit.d) : (async () => {
       let r;
       try { r = await fetch(url, init); } catch { throw new Error('连不上中心，请检查网络'); }
       const ct = r.headers.get('content-type') || '';
@@ -337,6 +357,7 @@
   Console.start = async function start() {
     buildShell();
     if (!EMBED) stars();
+    await boot();
     try { await Console.loadData(); } catch (e) { Console.toast(`读取数据失败：${e.message}`, 'err'); }
     readyRes();
     addEventListener('hashchange', dispatch);

@@ -18,7 +18,6 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import http from 'node:http';
-import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -29,6 +28,7 @@ import { createConvLog } from './convlog.mjs';
 import { createVault } from './vault.mjs';
 import { createExtras } from './extras.mjs';
 import { createAdmin } from './admin.mjs';
+import { sendBody, createStatic } from './perf.mjs';
 
 const run = promisify(execFile);
 const VERSION = '0.9.3';
@@ -1448,14 +1448,32 @@ async function handleRpc(msg, who) {
 // ------------------------------------------------------------------ HTTP ----
 
 function send(res, code, body, type = 'application/json; charset=utf-8') {
-  const data = typeof body === 'string' ? body : JSON.stringify(body);
-  // 大响应（快照、视图）在客户端支持时压缩，省带宽
-  if (data.length > 64 * 1024 && /\bgzip\b/.test(res.req?.headers['accept-encoding'] || '')) {
-    res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store', 'content-encoding': 'gzip' });
-    return res.end(zlib.gzipSync(data));
+  // ≥ 1KB 的文本/JSON 按 Accept-Encoding 压缩（br 优先，其次 gzip），见 perf.mjs
+  sendBody(res, code, typeof body === 'string' ? body : JSON.stringify(body), type);
+}
+
+// 内部子请求（控制台首屏汇总接口用）：走和浏览器单独请求完全相同的 route（身份校验、过滤都一样），只把响应收下来；
+// 带上原请求的头（网关身份），但不带 Accept-Encoding 和条件请求头，所以拿到的永远是原文
+async function internalGet(req, target) {
+  const headers = { ...req.headers };
+  for (const k of ['accept-encoding', 'if-none-match', 'if-modified-since', 'range', 'content-length', 'content-type']) delete headers[k];
+  const sub = { method: 'GET', url: target, headers, socket: req.socket };
+  const chunks = [];
+  let type = '';
+  const subRes = {
+    req: sub, statusCode: 200,
+    writeHead(code, h = {}) { this.statusCode = code; type = String(h['content-type'] || ''); return this; },
+    end(chunk) { if (chunk) chunks.push(Buffer.from(chunk)); },
+  };
+  try {
+    await route(sub, subRes, new URL(target, 'http://localhost'));
+  } catch (e) {
+    if (!(e instanceof UserError)) console.error(e);
+    return { status: e instanceof UserError ? 400 : 500, body: null };
   }
-  res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
-  res.end(data);
+  const text = Buffer.concat(chunks).toString('utf8');
+  if (!/json/i.test(type)) return { status: subRes.statusCode, body: text };
+  try { return { status: subRes.statusCode, body: JSON.parse(text) }; } catch { return { status: 500, body: null }; }
 }
 
 // 设备端离线快照：全部有效记忆（不含候选），用 etag 避免重复下载
@@ -1489,13 +1507,8 @@ function forbiddenPage(res) {
   return send(res, 403, '<!doctype html><meta charset="utf-8"><p style="font:15px sans-serif;padding:24px">只有已经接入共享记忆的你自己的机器能打开这个页面（按 Tailscale 或虚拟机身份识别）。</p>', 'text/html; charset=utf-8');
 }
 
-// 页面和静态文件：每次都读盘，改了文件刷新就生效
-function sendAppFile(res, name, type) {
-  let data;
-  try { data = fs.readFileSync(path.join(APP_DIR, name)); } catch { return send(res, 404, { error: 'not found' }); }
-  res.writeHead(200, { 'content-type': type, 'cache-control': 'no-cache' });
-  res.end(data);
-}
+// 页面和静态文件：按修改时间判断，改了文件刷新就生效；ETag/304、压缩、合并脚本和样式包都在 perf.mjs
+const statics = createStatic(APP_DIR, { notFound: (res) => send(res, 404, { error: 'not found' }) });
 
 function readBody(req, max = 8 << 20) {
   return new Promise((resolve, reject) => {
@@ -1576,15 +1589,15 @@ async function route(req, res, url) {
     if (req.method !== 'GET') return send(res, 405, { error: 'method not allowed' });
     if (p === '/console' || p === '/console/') {
       logUsage({ device: viewer, client: 'browser' }, 'console');
-      return sendAppFile(res, 'console.html', 'text/html; charset=utf-8');
+      return statics.html(res);
     }
     if (p === '/wall') {
       logUsage({ device: viewer, client: 'browser' }, 'wall');
-      return sendAppFile(res, 'wall.html', 'text/html; charset=utf-8');
+      return statics.page(res, 'wall.html', 'text/html; charset=utf-8');
     }
     // 控制台静态文件：只放行 console*.css / console*.js
     const cf = /^\/console\/(console[\w-]*\.(css|js))$/.exec(p);
-    if (cf) return sendAppFile(res, cf[1], cf[2] === 'css' ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8');
+    if (cf) return statics.asset(res, cf[1]);
     return send(res, 404, { error: 'not found' });
   }
   // 记忆数据接口（控制台和大屏用）：只给已接入的你自己的机器看（凭网关认出的身份，且该身份绑定了一个设备）；不在名单里的机器打不开
@@ -1786,7 +1799,7 @@ async function main() {
     heartbeatFile, agentsOverview, watch, git, store, deviceSet, newJoinCode, VERSION, agentVersion, redactSecrets, usageTail,
     lastRequest: (name) => lastReq.get(name) || null,
     tools: () => [...TOOLS, ...CARD_TOOLS], conv: () => conv, extras: () => extras, pipe: () => pipe,
-    listJoinCodes, revokeJoinCode,
+    listJoinCodes, revokeJoinCode, internalGet,
     // 浏览者（设备名）按 hide_projects 能不能看某个项目；口径同 MCP 工具里的 visible()
     visibleTo: (viewer, project) => visible({ device: viewer }, project), hiddenOf: (viewer) => hiddenFor({ device: viewer }),
     // 各功能需要的 server 内部函数在自己的占位行上加；占位行之间隔着空行，合并时互不冲突
@@ -1822,6 +1835,7 @@ async function main() {
   server.listen(CFG.port, CFG.listen, () => {
     console.log(`agent-memory ${VERSION} listening on ${CFG.listen}:${CFG.port}, ${store.size} entries`);
   });
+  statics.warm();
 }
 
 function addDeviceToken(name, role = 'device', via = '') {

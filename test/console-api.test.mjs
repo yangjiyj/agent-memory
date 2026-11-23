@@ -45,7 +45,10 @@ describe('大屏里的拓扑', () => {
     try {
       const shell = await fetch(`${hub.base}/console?embed=1`, { headers: GATE_HEADERS });
       assert.equal(shell.status, 200);
-      assert.ok((await shell.text()).includes('console-core.js'));
+      // 外壳里的脚本现在是运行时合并出来的包（console-app-<哈希>.js），内核文件在包里
+      const bundle = /src="(\/console\/console-app-[0-9a-f]{12}\.js)"/.exec(await shell.text())?.[1];
+      assert.ok(bundle, '外壳要引用合并后的脚本包');
+      assert.ok((await (await fetch(`${hub.base}${bundle}`, { headers: GATE_HEADERS })).text()).includes('/* console-core.js */'));
       const wall = await (await fetch(`${hub.base}/wall`, { headers: GATE_HEADERS })).text();
       assert.ok(wall.includes('/console?embed=1#/topology'));
       const core = await (await fetch(`${hub.base}/console/console-core.js`, { headers: GATE_HEADERS })).text();
