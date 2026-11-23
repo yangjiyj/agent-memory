@@ -1,0 +1,38 @@
+# agent-memory 的 Docker 启动，两种用法，各用一个 profile：
+#   演示  docker compose --profile demo up       首次启动自动生成虚构数据，浏览器打开 http://127.0.0.1:8790/
+#   正式  docker compose --profile hub up -d     数据在卷 am-data（容器内 /data），首次启动按环境变量生成 config.json
+# 宿主机端口用 AM_PORT 改（默认 8790）。
+# 演示模式没有任何认证，端口只绑 127.0.0.1，不要改成对外地址，也不要放到公网。
+name: agent-memory
+
+services:
+  demo:
+    profiles: [demo]
+    build: .
+    image: agent-memory:local
+    command: ["demo"]
+    ports:
+      - "127.0.0.1:${AM_PORT:-8790}:8790"
+    environment:
+      AM_PUBLIC_URL: "http://127.0.0.1:${AM_PORT:-8790}"
+    volumes:
+      - demo-data:/data
+
+  hub:
+    profiles: [hub]
+    build: .
+    image: agent-memory:local
+    restart: unless-stopped
+    ports:
+      - "${AM_BIND:-0.0.0.0}:${AM_PORT:-8790}:8790"
+    environment:
+      # 以下三个只在首次生成 config.json 时读；之后直接改卷里的 /data/config.json
+      AM_PUBLIC_URL: "${AM_PUBLIC_URL:-}"
+      AM_GATE_SECRET: "${AM_GATE_SECRET:-}"
+      AM_CONSOLE_VIEWER: "${AM_CONSOLE_VIEWER:-}"
+    volumes:
+      - am-data:/data
+
+volumes:
+  demo-data:
+  am-data:
