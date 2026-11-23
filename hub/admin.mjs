@@ -24,6 +24,7 @@ import fs from 'node:fs';
 // [C] import 位
 //
 // [D] import 位
+import { createTools } from './admin-tools.mjs';
 //
 // [E] import 位
 //
@@ -537,6 +538,7 @@ export function createAdmin(ctx) {
     // [C] 扩展位
     //
     // [D] 扩展位
+    createTools(ctx, kit),
     //
     // [E] 扩展位
     //
